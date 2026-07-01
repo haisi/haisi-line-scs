@@ -1,0 +1,35 @@
+= Optimistic Locking & Idempotency and their HTTP Codes
+
+Do the following HTTP codes ring a bell?
+
+* 304 Not Modified
+* 409 Conflict
+* 412 Precondition Failed
+* 428 Precondition Required
+
+How about these HTTP headers?
+
+* If-Match
+* If-None-Match
+* ETag
+* Idempotency-Key
+
+Do you know how optimistic locking works and where to put the lock?
+
+If you are unsure, you found the right repository.
+This repository contains a presentation explaining:
+
+* What optimistic locking is
+* What to consider when using JPA
+* What to consider when exposing optimistically locked data via HTTP
+
+Then, we explain how to design idempotent HTTP API.
+
+Furthermore, this repo contains a Spring-Boot application and IT-Test
+showing the learning in practice.
+
+== Credits
+This content was heavily influenced by the following resources.
+
+. https://www.bartslota.com/post/concurrency-control-in-rest-api-with-spring-framework[Concurrency control in REST API with Spring Framework] by Bartek Słota
+. https://blog.dochia.dev/blog/idempotency/[Idempotency Is Easy Until the Second Request Is Different]
