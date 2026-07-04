@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 @Service
 public class LineService {
@@ -58,12 +59,12 @@ public class LineService {
 
     @Transactional
     public Line moveLeft(LineId id, @Nullable String ifMatchVersion, int by, @Nullable String idempotencyKey) {
-        return move(id, LineCommand.MovePoint.Side.LEFT, by, ifMatchVersion, idempotencyKey);
+        return move(id, new LineCommand.MoveLeft(by), ifMatchVersion, idempotencyKey, line -> line.moveLeft(by));
     }
 
     @Transactional
     public Line moveRight(LineId id, @Nullable String ifMatchVersion, int by, @Nullable String idempotencyKey) {
-        return move(id, LineCommand.MovePoint.Side.RIGHT, by, ifMatchVersion, idempotencyKey);
+        return move(id, new LineCommand.MoveRight(by), ifMatchVersion, idempotencyKey, line -> line.moveRight(by));
     }
 
     /**
@@ -75,8 +76,8 @@ public class LineService {
      * The idempotency record is staged in the same transaction as the mutation, so a lost CAS
      * rolls back both together -- a failed attempt never leaves behind a replay record.
      */
-    private Line move(LineId id, LineCommand.MovePoint.Side side, int by, @Nullable String ifMatchVersion, @Nullable String idempotencyKey) {
-        String fingerprint = side + ":" + by;
+    private Line move(LineId id, LineCommand command, @Nullable String ifMatchVersion, @Nullable String idempotencyKey, Consumer<Line> apply) {
+        String fingerprint = command.toString();
         if (idempotencyKey != null) {
             UUID key = UUID.fromString(idempotencyKey);
             Optional<IdempotencyKey> priorAttempt = idempotencyKeyRepository.findById(key);
@@ -97,11 +98,7 @@ public class LineService {
             throw new StaleStateIdentified(id.id());  // 412 Precondition Failed
         }
 
-        if (side == LineCommand.MovePoint.Side.LEFT) {
-            line.moveLeft(by);  // 422 on invariant violation
-        } else {
-            line.moveRight(by);
-        }
+        apply.accept(line);  // 422 on invariant violation
 
         if (idempotencyKey != null) {
             idempotencyKeyRepository.save(new IdempotencyKey(UUID.fromString(idempotencyKey), fingerprint));

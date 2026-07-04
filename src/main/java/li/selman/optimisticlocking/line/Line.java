@@ -60,14 +60,6 @@ public class Line implements AggregateRoot<Line, LineId> {
         return this.left.getPosition() == left && this.right.getPosition() == right;
     }
 
-    public boolean canMoveLeft() {
-        return left.getPosition() > 0 && totalUpdates() < MAX_UPDATES;
-    }
-
-    public boolean canMoveRight() {
-        return totalUpdates() < MAX_UPDATES;
-    }
-
     public void moveLeft(int by) {
         int newLeft = left.getPosition() + by;
         if (newLeft < 0) {
@@ -94,5 +86,23 @@ public class Line implements AggregateRoot<Line, LineId> {
 
     private int totalUpdates() {
         return left.getNumberOfUpdates() + right.getNumberOfUpdates();
+    }
+
+    /**
+     * Determines whether the <b>typ of command</b> would be allowed.
+     * Important, if the user tries to actually execute the command, you must still <b>check the content of the command</b>.
+     * At view time these values are not available yet!
+     */
+    public boolean can(Class<? extends LineCommand> commandType) {
+        if (commandType == LineCommand.CreateLine.class) {
+            return true;
+        } else if (commandType == LineCommand.DeleteLine.class) {
+            return true; // TODO only with operation #delete on resource line
+        } else if (commandType == LineCommand.MoveLeft.class) {
+            return left.getPosition() > 0 && totalUpdates() < MAX_UPDATES;
+        } else if (commandType == LineCommand.MoveRight.class) {
+            return totalUpdates() < MAX_UPDATES;
+        }
+        throw new IllegalStateException("No 'can' check for " + commandType);
     }
 }
