@@ -20,6 +20,8 @@ public class LineFixture {
         private int right = 5;
         private long lockVersion = 1;
         private Instant updatedAt;
+        private int leftUpdates = 0;
+        private int rightUpdates = 0;
 
         public LineBuilder id(UUID id) {
             this.id = id;
@@ -56,10 +58,22 @@ public class LineFixture {
             return this;
         }
 
+        public LineBuilder leftUpdates(int leftUpdates) {
+            this.leftUpdates = leftUpdates;
+            return this;
+        }
+
+        public LineBuilder rightUpdates(int rightUpdates) {
+            this.rightUpdates = rightUpdates;
+            return this;
+        }
+
         public Line build() {
             Line line = new Line(new LineId(id), left, right);
             ReflectionTestUtils.setField(line, "lockVersion", lockVersion);
             ReflectionTestUtils.setField(line, "updatedAt", updatedAt);
+            ReflectionTestUtils.setField(ReflectionTestUtils.getField(line, "left"), "numberOfUpdates", leftUpdates);
+            ReflectionTestUtils.setField(ReflectionTestUtils.getField(line, "right"), "numberOfUpdates", rightUpdates);
             return line;
         }
 
