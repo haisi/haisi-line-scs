@@ -1,6 +1,7 @@
 package li.selman.optimisticlocking.line;
 
 import jakarta.persistence.*;
+import li.selman.optimisticlocking.shared.BusinessRuleViolated;
 import org.jmolecules.ddd.types.AggregateRoot;
 import org.jspecify.annotations.Nullable;
 
@@ -8,6 +9,8 @@ import java.time.Instant;
 
 @Entity
 public class Line implements AggregateRoot<Line, LineId> {
+
+    private static final int MAX_UPDATES = 5;
 
     @EmbeddedId
     private LineId id;
@@ -31,7 +34,7 @@ public class Line implements AggregateRoot<Line, LineId> {
     }
 
     Line(LineId id, int left, int right) {
-        if (left > right) throw new IllegalArgumentException("left (%d) > right (%d)".formatted(left, right));
+        if (left > right) throw new BusinessRuleViolated("left (%d) would exceed right (%d)".formatted(left, right));
         this.id = id;
         this.left = new LeftPoint(left);
         this.right = new RightPoint(right);
@@ -43,5 +46,53 @@ public class Line implements AggregateRoot<Line, LineId> {
 
     public String getLockVersion() {
         return "\"" + lockVersion + "\"";
+    }
+
+    public int getLeft() {
+        return left.getPosition();
+    }
+
+    public int getRight() {
+        return right.getPosition();
+    }
+
+    public boolean sameAs(int left, int right) {
+        return this.left.getPosition() == left && this.right.getPosition() == right;
+    }
+
+    public boolean canMoveLeft() {
+        return left.getPosition() > 0 && totalUpdates() < MAX_UPDATES;
+    }
+
+    public boolean canMoveRight() {
+        return totalUpdates() < MAX_UPDATES;
+    }
+
+    public void moveLeft(int by) {
+        int newLeft = left.getPosition() + by;
+        if (newLeft < 0) {
+            throw new BusinessRuleViolated("left point may not go below zero");
+        }
+        validateInvariants(newLeft, right.getPosition());
+        left.move(by);
+    }
+
+    public void moveRight(int by) {
+        int newRight = right.getPosition() + by;
+        validateInvariants(left.getPosition(), newRight);
+        right.move(by);
+    }
+
+    private void validateInvariants(int leftPosition, int rightPosition) {
+        if (leftPosition > rightPosition) {
+            throw new BusinessRuleViolated("left (%d) would exceed right (%d)".formatted(leftPosition, rightPosition));
+        }
+        if (totalUpdates() >= MAX_UPDATES) {
+            throw new BusinessRuleViolated("line may only be updated %d times".formatted(MAX_UPDATES));
+        }
+    }
+
+    private int totalUpdates() {
+        return left.getNumberOfUpdates() + right.getNumberOfUpdates();
     }
 }
