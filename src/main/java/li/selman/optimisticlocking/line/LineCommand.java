@@ -1,6 +1,8 @@
 package li.selman.optimisticlocking.line;
 
-public sealed interface LineCommand {
+import li.selman.optimisticlocking.shared.Command;
+
+public sealed interface LineCommand extends Command {
 
     record CreateLine(LineId id, int left, int right) implements LineCommand {}
     record DeleteLine() implements LineCommand {}
