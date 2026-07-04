@@ -1,5 +1,8 @@
 package li.selman.optimisticlocking.line.web;
 
+import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.linkTo;
+import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.methodOn;
+
 import jakarta.annotation.Nullable;
 import li.selman.optimisticlocking.line.Line;
 import li.selman.optimisticlocking.line.LineCommand;
@@ -7,6 +10,7 @@ import li.selman.optimisticlocking.line.LineCreationResult;
 import li.selman.optimisticlocking.line.LineId;
 import li.selman.optimisticlocking.line.LineRepository;
 import li.selman.optimisticlocking.line.LineService;
+import li.selman.optimisticlocking.shared.ETagMatcher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.hateoas.EntityModel;
@@ -36,7 +40,7 @@ public class LineController {
         return lineRepository
                 .findById(id)
                 .map(it -> {
-                    if (ifNoneMatch != null && ifNoneMatch.equals(it.getLockVersion())) {
+                    if (ifNoneMatch != null && ETagMatcher.matchesIfNoneMatch(ifNoneMatch, it.getLockVersion())) {
                         return ResponseEntity.status(HttpStatus.NOT_MODIFIED)
                                 .eTag(it.getLockVersion())
                                 .<EntityModel<Line>>build();
@@ -57,10 +61,14 @@ public class LineController {
     @PutMapping("{id}")
     ResponseEntity<EntityModel<Line>> create(@PathVariable LineId id, @RequestBody CreateLineRequest body) {
         LineCreationResult result = lineService.create(new LineCommand.CreateLine(id, body.left(), body.right()));
-        HttpStatus status = result.created() ? HttpStatus.CREATED : HttpStatus.OK;
-        return ResponseEntity.status(status)
-                .eTag(result.line().getLockVersion())
-                .body(EntityModel.of(result.line()));
+        // RFC 9110 §9.3.4: a 201 response MUST carry Location; a 200 replay needs none, since the
+        // client already addressed this exact URI to get here.
+        ResponseEntity.BodyBuilder response = result.created()
+                ? ResponseEntity.status(HttpStatus.CREATED)
+                        .location(linkTo(methodOn(LineController.class).get(id, null))
+                                .toUri())
+                : ResponseEntity.status(HttpStatus.OK);
+        return response.eTag(result.line().getLockVersion()).body(EntityModel.of(result.line()));
     }
 
     @PutMapping("{id}/left")

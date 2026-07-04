@@ -1,10 +1,10 @@
 package li.selman.optimisticlocking.line;
 
 import jakarta.transaction.Transactional;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Consumer;
+import li.selman.optimisticlocking.shared.ETagMatcher;
 import li.selman.optimisticlocking.shared.PreconditionRequired;
 import li.selman.optimisticlocking.shared.StaleStateIdentified;
 import li.selman.optimisticlocking.shared.idempotency.IdempotencyKey;
@@ -28,7 +28,7 @@ public class LineService {
     public void delete(LineId id, @Nullable String ifMatchVersion) {
         Line line = repo.findById(id).orElse(null);
         if (line == null) return; // already gone -> 204
-        if (ifMatchVersion != null && !Objects.equals(line.getLockVersion(), ifMatchVersion)) {
+        if (ifMatchVersion != null && !ETagMatcher.matchesIfMatch(ifMatchVersion, line.getLockVersion())) {
             // In case the user only want to delete the resource, iff it has not changed yet
             throw new StaleStateIdentified(id.id()); // 412
         }
@@ -98,7 +98,7 @@ public class LineService {
         }
 
         Line line = repo.findForUpdate(id).orElseThrow(() -> new LineNotFound(id.id()));
-        if (!Objects.equals(line.getLockVersion(), ifMatchVersion)) {
+        if (!ETagMatcher.matchesIfMatch(ifMatchVersion, line.getLockVersion())) {
             throw new StaleStateIdentified(id.id()); // 412 Precondition Failed
         }
 
