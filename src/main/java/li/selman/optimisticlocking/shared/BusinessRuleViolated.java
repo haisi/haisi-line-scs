@@ -7,7 +7,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
  * Thrown when a change would violate one of the aggregate's invariants (e.g. left past right,
  * update budget exhausted). In HTTP world -> 422 Unprocessable Entity.
  */
-@ResponseStatus(HttpStatus.UNPROCESSABLE_ENTITY)
+@ResponseStatus(HttpStatus.UNPROCESSABLE_CONTENT)
 public class BusinessRuleViolated extends RuntimeException {
 
     public BusinessRuleViolated(String message) {

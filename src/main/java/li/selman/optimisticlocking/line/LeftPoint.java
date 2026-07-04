@@ -7,6 +7,7 @@ public class LeftPoint {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @SuppressWarnings("NullAway.Init")
     private Long id;
 
     @Column(nullable = false)

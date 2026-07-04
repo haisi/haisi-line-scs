@@ -39,6 +39,7 @@ public class Line implements AggregateRoot<Line, LineId> {
         this.right = new RightPoint(right);
     }
 
+    @Override
     public LineId getId() {
         return id;
     }

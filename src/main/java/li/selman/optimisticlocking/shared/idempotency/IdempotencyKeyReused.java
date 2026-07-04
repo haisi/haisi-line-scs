@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
  * was originally recorded against. In HTTP world -> 422 Unprocessable Entity: the client
  * is reusing a key it shouldn't, rather than genuinely retrying the same operation.
  */
-@ResponseStatus(HttpStatus.UNPROCESSABLE_ENTITY)
+@ResponseStatus(HttpStatus.UNPROCESSABLE_CONTENT)
 public class IdempotencyKeyReused extends RuntimeException {
 
     public IdempotencyKeyReused(UUID key) {

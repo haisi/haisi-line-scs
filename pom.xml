@@ -13,21 +13,12 @@
     <version>0.0.1-SNAPSHOT</version>
     <name>optimistic-locking</name>
     <description>optimistic-locking</description>
-    <url/>
-    <licenses>
-        <license/>
-    </licenses>
-    <developers>
-        <developer/>
-    </developers>
-    <scm>
-        <connection/>
-        <developerConnection/>
-        <tag/>
-        <url/>
-    </scm>
     <properties>
+        <error-prone-core.version>2.50.0</error-prone-core.version>
         <java.version>25</java.version>
+        <nullaway.version>0.13.7</nullaway.version>
+        <!-- Properties using which additional Error Prone flags can be specified. -->
+        <error-prone.patch-args/>
     </properties>
     <dependencies>
 
@@ -138,6 +129,107 @@
                         </goals>
                     </execution>
                 </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <encoding>UTF-8</encoding>
+                    <compilerArgs combine.children="append">
+                        <!-- https://docs.oracle.com/en/java/javase/21/docs/specs/man/javac.html -->
+                        <!--
+                        Enable all warnings
+                        We turn off:
+                        - 'serial' because we don't use Java serialization (and all it does is complain about the serialVersionUID)
+                        - 'processing' because it complains about every annotation
+                        -->
+                        <arg>-Xlint:all,-serial,-processing,-varargs</arg>
+                        <!-- Terminate compilation when *warnings* occur -->
+                        <arg>-Werror</arg>
+
+                        <!--
+                        Error Prone Config: https://errorprone.info/docs/flags
+                        Mainly based on: https://github.com/PicnicSupermarket/error-prone-support/blob/master/pom.xml
+                        -->
+                        <arg>
+                            -Xplugin:ErrorProne -Xep:Var:ERROR -Xep:StringSplitter:OFF
+                            <!--
+                            NullAway Configs
+                            https://github.com/uber/NullAway/wiki/Configuration
+                            -->
+                            -XepOpt:NullAway:AnnotatedPackages=li.selman.optimisticlocking
+                            <!--
+                            Calling .get() on an Optional value that hasn't been previously tested with Optional.isPresent(...)
+                            will result in an error.
+                            https://github.com/uber/NullAway/wiki/Configuration#optional-emptiness-check
+                            -->
+                            -XepOpt:NullAway:CheckOptionalEmptiness=true
+
+                            -XepOpt:IdentifierName:AllowInitialismsInTypeName=true
+                            -XepOpt:InlineMe:SkipInliningsWithComments=false
+                            <!-- https://github.com/google/error-prone/issues/2910 -->
+                            -XepOpt:Nullness:Conservative=false
+                            <!-- We don't target JDK 8. -->
+                            -Xep:Java8ApiChecker:OFF
+                            <!-- We don't target Android. -->
+                            -Xep:StaticOrDefaultInterfaceMethod:OFF
+                            <!-- We generally discourage `var` use. -->
+                            -Xep:Varifier:OFF
+                            <!-- Yoda conditions are not always more readable than the alternative. -->
+                            -Xep:YodaCondition:OFF
+                            -XepOpt:CheckReturnValue:CheckAllConstructors=true
+                            <!-- Append additional custom arguments. -->
+                            ${error-prone.patch-args}
+                            ${error-prone.self-check-args}
+                        </arg>
+                        <!--
+                        The Error Prone plugin makes certain
+                        assumptions about the state of the AST at the
+                        moment it is invoked. Those assumptions require
+                        the `simple` compile policy. This flag may be
+                        dropped after resolution of
+                        https://bugs.openjdk.java.net/browse/JDK-8155674.
+                         -->
+                        <arg>-XDcompilePolicy=simple</arg>
+                        <!--
+                        Similarly, Error Prone requires that flow
+                        analysis has been performed, e.g. to determine
+                        whether variables are effectively final. This
+                        flag may be dropped if it ever becomes the
+                        default. See
+                        https://bugs.openjdk.org/browse/JDK-8134117.
+                        -->
+                        <arg>--should-stop=ifError=FLOW</arg>
+                    </compilerArgs>
+                    <annotationProcessorPaths>
+                        <!--
+                        - Analyses AST to spot bugs: https://errorprone.info/bugpatterns
+                            - Can be extended with custom or third-party bug patterns: https://error-prone.picnic.tech/
+                        - Can automatically patch code not matching a patter
+                            - Can be extended with custom or third-part patchers
+
+                        - Install IJ plugin: https://plugins.jetbrains.com/plugin/7349-error-prone-compiler
+                            - Configure Settings | Compiler | Java Compiler | Use compiler: Javac with error-prone
+                            - make sure Settings | Compiler | Use external build is NOT selected.
+                        -->
+                        <path>
+                            <groupId>com.google.errorprone</groupId>
+                            <artifactId>error_prone_core</artifactId>
+                            <version>${error-prone-core.version}</version>
+                        </path>
+                        <!--
+                        - Helps eliminate NullPointerExceptions
+                        - Requires error prone
+                        See for more: https://github.com/uber/NullAway/wiki
+                        -->
+                        <path>
+                            <groupId>com.uber.nullaway</groupId>
+                            <artifactId>nullaway</artifactId>
+                            <version>${nullaway.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

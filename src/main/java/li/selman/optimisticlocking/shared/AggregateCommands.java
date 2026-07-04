@@ -39,6 +39,7 @@ public final class AggregateCommands<A extends AggregateRoot<?, ?>, C extends Co
         return firstCharToLowerCase(!strippedCommandName.isEmpty() ? strippedCommandName : commandType.getSimpleName());
     }
 
+    @SuppressWarnings("StringCaseLocaleUsage")
     private String firstCharToLowerCase(String str) {
         return str.substring(0, 1).toLowerCase() + str.substring(1);
     }

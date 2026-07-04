@@ -1,7 +1,9 @@
 package li.selman.optimisticlocking.line;
 
 import java.time.Instant;
+import java.util.Objects;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 import org.springframework.test.util.ReflectionTestUtils;
 
 public class LineFixture {
@@ -18,7 +20,7 @@ public class LineFixture {
         private int left = 1;
         private int right = 5;
         private long lockVersion = 1;
-        private Instant updatedAt;
+        private @Nullable Instant updatedAt;
         private int leftUpdates = 0;
         private int rightUpdates = 0;
 
@@ -71,8 +73,12 @@ public class LineFixture {
             Line line = new Line(new LineId(id), left, right);
             ReflectionTestUtils.setField(line, "lockVersion", lockVersion);
             ReflectionTestUtils.setField(line, "updatedAt", updatedAt);
-            ReflectionTestUtils.setField(ReflectionTestUtils.getField(line, "left"), "numberOfUpdates", leftUpdates);
-            ReflectionTestUtils.setField(ReflectionTestUtils.getField(line, "right"), "numberOfUpdates", rightUpdates);
+            ReflectionTestUtils.setField(
+                    Objects.requireNonNull(ReflectionTestUtils.getField(line, "left")), "numberOfUpdates", leftUpdates);
+            ReflectionTestUtils.setField(
+                    Objects.requireNonNull(ReflectionTestUtils.getField(line, "right")),
+                    "numberOfUpdates",
+                    rightUpdates);
             return line;
         }
     }
