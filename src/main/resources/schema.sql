@@ -28,3 +28,11 @@ CREATE TABLE line
 --     CONSTRAINT uq_line_left UNIQUE (left_id),
 --     CONSTRAINT uq_line_right UNIQUE (right_id),
 );
+
+-- Not FK'd to line: a record of "this Idempotency-Key was already applied" should outlive
+-- the line it was applied to (e.g. the line could later be deleted).
+CREATE TABLE idempotency_key
+(
+    id          UUID PRIMARY KEY,
+    fingerprint VARCHAR(255) NOT NULL
+);
