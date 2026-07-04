@@ -1,13 +1,12 @@
 package li.selman.optimisticlocking.line;
 
-import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.MethodSource;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 import java.util.Arrays;
 import java.util.stream.Stream;
-
-import static org.assertj.core.api.Assertions.assertThatCode;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class LineTest {
 
@@ -33,10 +32,7 @@ class LineTest {
         }
 
         static Stream<Class<? extends LineCommand>> commandTypes() {
-            return Arrays.stream(LineCommand.class.getPermittedSubclasses())
-                    .map(c -> c.asSubclass(LineCommand.class));
+            return Arrays.stream(LineCommand.class.getPermittedSubclasses()).map(c -> c.asSubclass(LineCommand.class));
         }
-
     }
-
 }

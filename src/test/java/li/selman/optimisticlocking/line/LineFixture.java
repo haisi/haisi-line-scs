@@ -1,9 +1,8 @@
 package li.selman.optimisticlocking.line;
 
-import org.springframework.test.util.ReflectionTestUtils;
-
 import java.time.Instant;
 import java.util.UUID;
+import org.springframework.test.util.ReflectionTestUtils;
 
 public class LineFixture {
 
@@ -76,7 +75,5 @@ public class LineFixture {
             ReflectionTestUtils.setField(ReflectionTestUtils.getField(line, "right"), "numberOfUpdates", rightUpdates);
             return line;
         }
-
     }
-
 }

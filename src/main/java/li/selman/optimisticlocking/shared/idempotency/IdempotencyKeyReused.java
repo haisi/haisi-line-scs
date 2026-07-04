@@ -1,9 +1,8 @@
 package li.selman.optimisticlocking.shared.idempotency;
 
+import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.ResponseStatus;
-
-import java.util.UUID;
 
 /**
  * Thrown when an Idempotency-Key is replayed with a different payload than the one it
@@ -16,5 +15,4 @@ public class IdempotencyKeyReused extends RuntimeException {
     public IdempotencyKeyReused(UUID key) {
         super(String.format("Idempotency-Key %s was already used for a different request", key));
     }
-
 }

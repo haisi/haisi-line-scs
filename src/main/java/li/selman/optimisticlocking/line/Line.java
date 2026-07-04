@@ -1,11 +1,10 @@
 package li.selman.optimisticlocking.line;
 
 import jakarta.persistence.*;
+import java.time.Instant;
 import li.selman.optimisticlocking.shared.BusinessRuleViolated;
 import org.jmolecules.ddd.types.AggregateRoot;
 import org.jspecify.annotations.Nullable;
-
-import java.time.Instant;
 
 @Entity
 public class Line implements AggregateRoot<Line, LineId> {

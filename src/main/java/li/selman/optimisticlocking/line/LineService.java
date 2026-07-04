@@ -1,6 +1,10 @@
 package li.selman.optimisticlocking.line;
 
 import jakarta.transaction.Transactional;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.function.Consumer;
 import li.selman.optimisticlocking.shared.PreconditionRequired;
 import li.selman.optimisticlocking.shared.StaleStateIdentified;
 import li.selman.optimisticlocking.shared.idempotency.IdempotencyKey;
@@ -8,11 +12,6 @@ import li.selman.optimisticlocking.shared.idempotency.IdempotencyKeyRepository;
 import li.selman.optimisticlocking.shared.idempotency.IdempotencyKeyReused;
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
-
-import java.util.Objects;
-import java.util.Optional;
-import java.util.UUID;
-import java.util.function.Consumer;
 
 @Service
 public class LineService {
@@ -28,10 +27,10 @@ public class LineService {
     @Transactional
     public void delete(LineId id, @Nullable String ifMatchVersion) {
         Line line = repo.findById(id).orElse(null);
-        if (line == null) return;                // already gone -> 204
+        if (line == null) return; // already gone -> 204
         if (ifMatchVersion != null && !Objects.equals(line.getLockVersion(), ifMatchVersion)) {
             // In case the user only want to delete the resource, iff it has not changed yet
-            throw new StaleStateIdentified(id.id());  // 412
+            throw new StaleStateIdentified(id.id()); // 412
         }
         repo.delete(line);
     }
@@ -48,13 +47,13 @@ public class LineService {
         if (existing.isPresent()) {
             Line line = existing.get();
             if (line.sameAs(cmd.left(), cmd.right())) {
-                return new LineCreationResult(line, false);  // 200 OK: identical replay
+                return new LineCreationResult(line, false); // 200 OK: identical replay
             }
-            throw new LineAlreadyExists(cmd.id());  // 409 Conflict
+            throw new LineAlreadyExists(cmd.id()); // 409 Conflict
         }
         Line line = new Line(cmd.id(), cmd.left(), cmd.right());
         repo.save(line);
-        return new LineCreationResult(line, true);  // 201 Created
+        return new LineCreationResult(line, true); // 201 Created
     }
 
     @Transactional
@@ -76,33 +75,38 @@ public class LineService {
      * The idempotency record is staged in the same transaction as the mutation, so a lost CAS
      * rolls back both together -- a failed attempt never leaves behind a replay record.
      */
-    private Line move(LineId id, LineCommand command, @Nullable String ifMatchVersion, @Nullable String idempotencyKey, Consumer<Line> apply) {
+    private Line move(
+            LineId id,
+            LineCommand command,
+            @Nullable String ifMatchVersion,
+            @Nullable String idempotencyKey,
+            Consumer<Line> apply) {
         String fingerprint = command.toString();
         if (idempotencyKey != null) {
             UUID key = UUID.fromString(idempotencyKey);
             Optional<IdempotencyKey> priorAttempt = idempotencyKeyRepository.findById(key);
             if (priorAttempt.isPresent()) {
                 if (!priorAttempt.get().getFingerprint().equals(fingerprint)) {
-                    throw new IdempotencyKeyReused(key);  // 422 Unprocessable Content
+                    throw new IdempotencyKeyReused(key); // 422 Unprocessable Content
                 }
-                return repo.findById(id).orElseThrow(() -> new LineNotFound(id.id()));  // replay
+                return repo.findById(id).orElseThrow(() -> new LineNotFound(id.id())); // replay
             }
         }
 
         if (ifMatchVersion == null) {
-            throw new PreconditionRequired(id.id());  // 428 Precondition Required
+            throw new PreconditionRequired(id.id()); // 428 Precondition Required
         }
 
         Line line = repo.findForUpdate(id).orElseThrow(() -> new LineNotFound(id.id()));
         if (!Objects.equals(line.getLockVersion(), ifMatchVersion)) {
-            throw new StaleStateIdentified(id.id());  // 412 Precondition Failed
+            throw new StaleStateIdentified(id.id()); // 412 Precondition Failed
         }
 
-        apply.accept(line);  // 422 on invariant violation
+        apply.accept(line); // 422 on invariant violation
 
         if (idempotencyKey != null) {
             idempotencyKeyRepository.save(new IdempotencyKey(UUID.fromString(idempotencyKey), fingerprint));
         }
-        return line;  // commit performs the forced-increment CAS -> 409 on a lost race
+        return line; // commit performs the forced-increment CAS -> 409 on a lost race
     }
 }

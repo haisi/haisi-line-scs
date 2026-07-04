@@ -13,5 +13,4 @@ public class BusinessRuleViolated extends RuntimeException {
     public BusinessRuleViolated(String message) {
         super(message);
     }
-
 }

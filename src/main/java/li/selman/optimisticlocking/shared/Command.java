@@ -1,4 +1,3 @@
 package li.selman.optimisticlocking.shared;
 
-public interface Command {
-}
+public interface Command {}

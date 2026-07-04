@@ -5,5 +5,4 @@ package li.selman.optimisticlocking.line;
  * line was persisted) or 200 (the id already held identical content, so the request was a
  * no-op replay of an earlier create).
  */
-public record LineCreationResult(Line line, boolean created) {
-}
+public record LineCreationResult(Line line, boolean created) {}

@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
         <version>4.1.0</version>
-        <relativePath/> <!-- lookup parent from repository -->
+        <relativePath/>
+        <!-- lookup parent from repository -->
     </parent>
     <groupId>li.selman</groupId>
     <artifactId>optimistic-locking</artifactId>
@@ -30,6 +30,22 @@
         <java.version>25</java.version>
     </properties>
     <dependencies>
+
+        <dependency>
+            <groupId>org.jmolecules</groupId>
+            <artifactId>jmolecules-ddd</artifactId>
+            <version>2.0.1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.jmolecules.integrations</groupId>
+            <artifactId>jmolecules-jackson</artifactId>
+            <version>0.33.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.jmolecules.integrations</groupId>
+            <artifactId>jmolecules-spring</artifactId>
+            <version>0.33.0</version>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa</artifactId>
@@ -41,22 +57,6 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webmvc</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>org.jmolecules</groupId>
-            <artifactId>jmolecules-ddd</artifactId>
-            <version>2.0.1</version>
-        </dependency>
-        <dependency>
-            <groupId>org.jmolecules.integrations</groupId>
-            <artifactId>jmolecules-spring</artifactId>
-            <version>0.33.0</version>
-        </dependency>
-        <dependency>
-            <groupId>org.jmolecules.integrations</groupId>
-            <artifactId>jmolecules-jackson</artifactId>
-            <version>0.33.0</version>
         </dependency>
 
         <dependency>
@@ -88,6 +88,57 @@
 
     <build>
         <plugins>
+
+            <plugin>
+                <!--
+                - Code formatter verifying and applying the palantir-java-format.
+                - Runs as part of the verify phase.
+                - Apart from spotless:check, the plugin can also auto format the code using 'mvn spotless:apply'
+                - Install the IntelliJ plugin and configure your IntelliJ JRE Config
+                https://plugins.jetbrains.com/plugin/13180-palantir-java-format
+                - IJ > Settings > "palantir java format settings" > enable
+
+                See for more infos: https://github.com/palantir/palantir-java-format
+                -->
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <version>3.8.0</version>
+                <configuration>
+                    <java>
+                        <!-- https://github.com/diffplug/spotless/tree/main/plugin-maven#java -->
+                        <palantirJavaFormat>
+                            <style>PALANTIR</style>
+                        </palantirJavaFormat>
+                        <removeUnusedImports/>
+                        <!-- self-explanatory -->
+                        <formatAnnotations/>
+                        <!-- fixes formatting of type annotations, see below -->
+                    </java>
+                    <pom>
+                        <!-- https://github.com/diffplug/spotless/tree/main/plugin-maven#maven-pom -->
+                        <sortPom>
+                            <!-- https://github.com/Ekryd/sortpom/wiki/Parameters -->
+                            <nrOfIndentSpace>4</nrOfIndentSpace>
+                            <encoding>${project.build.sourceEncoding}</encoding>
+                            <predefinedSortOrder>recommended_2008_06</predefinedSortOrder>
+                            <sortDependencies>scope,groupId,artifactId</sortDependencies>
+                            <sortDependencyExclusions>groupId,artifactId</sortDependencyExclusions>
+                            <sortModules>true</sortModules>
+                            <sortPlugins>groupId,artifactId</sortPlugins>
+                            <!-- Sorts Maven pom properties alphabetically.
+                            Affects both project/properties and project/profiles/profile/properties. -->
+                            <sortProperties>true</sortProperties>
+                        </sortPom>
+                    </pom>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>

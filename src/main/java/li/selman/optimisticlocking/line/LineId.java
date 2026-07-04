@@ -1,9 +1,8 @@
 package li.selman.optimisticlocking.line;
 
 import jakarta.persistence.Embeddable;
-import org.jmolecules.ddd.types.Identifier;
-
 import java.util.UUID;
+import org.jmolecules.ddd.types.Identifier;
 
 @Embeddable
 public record LineId(UUID id) implements Identifier {
