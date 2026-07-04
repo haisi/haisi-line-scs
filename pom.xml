@@ -48,6 +48,16 @@
             <artifactId>jmolecules-ddd</artifactId>
             <version>2.0.1</version>
         </dependency>
+        <dependency>
+            <groupId>org.jmolecules.integrations</groupId>
+            <artifactId>jmolecules-spring</artifactId>
+            <version>0.33.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.jmolecules.integrations</groupId>
+            <artifactId>jmolecules-jackson</artifactId>
+            <version>0.33.0</version>
+        </dependency>
 
         <dependency>
             <groupId>com.h2database</groupId>
