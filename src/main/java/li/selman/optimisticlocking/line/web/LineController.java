@@ -10,12 +10,12 @@ import li.selman.optimisticlocking.line.LineCreationResult;
 import li.selman.optimisticlocking.line.LineId;
 import li.selman.optimisticlocking.line.LineRepository;
 import li.selman.optimisticlocking.line.LineService;
-import li.selman.optimisticlocking.shared.ETagMatcher;
+import li.selman.optimisticlocking.shared.IfMatch;
+import li.selman.optimisticlocking.shared.IfNoneMatch;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.hateoas.EntityModel;
 import org.springframework.hateoas.server.ExposesResourceFor;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -34,13 +34,11 @@ public class LineController {
     }
 
     @GetMapping("{id}")
-    ResponseEntity<EntityModel<Line>> get(
-            @PathVariable LineId id,
-            @RequestHeader(name = HttpHeaders.IF_NONE_MATCH, required = false) @Nullable String ifNoneMatch) {
+    ResponseEntity<EntityModel<Line>> get(@PathVariable LineId id, IfNoneMatch ifNoneMatch) {
         return lineRepository
                 .findById(id)
                 .map(it -> {
-                    if (ifNoneMatch != null && ETagMatcher.matchesIfNoneMatch(ifNoneMatch, it.getLockVersion())) {
+                    if (ifNoneMatch.matches(it.getLockVersion())) {
                         return ResponseEntity.status(HttpStatus.NOT_MODIFIED)
                                 .eTag(it.getLockVersion())
                                 .<EntityModel<Line>>build();
@@ -51,9 +49,7 @@ public class LineController {
     }
 
     @DeleteMapping("{id}")
-    ResponseEntity<Void> delete(
-            @PathVariable LineId id,
-            @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) @Nullable String ifMatch) {
+    ResponseEntity<Void> delete(@PathVariable LineId id, IfMatch ifMatch) {
         lineService.delete(id, ifMatch);
         return ResponseEntity.noContent().build();
     }
@@ -65,7 +61,7 @@ public class LineController {
         // client already addressed this exact URI to get here.
         ResponseEntity.BodyBuilder response = result.created()
                 ? ResponseEntity.status(HttpStatus.CREATED)
-                        .location(linkTo(methodOn(LineController.class).get(id, null))
+                        .location(linkTo(methodOn(LineController.class).get(id, IfNoneMatch.of(null)))
                                 .toUri())
                 : ResponseEntity.status(HttpStatus.OK);
         return response.eTag(result.line().getLockVersion()).body(EntityModel.of(result.line()));
@@ -74,7 +70,7 @@ public class LineController {
     @PutMapping("{id}/left")
     ResponseEntity<EntityModel<Line>> moveLeft(
             @PathVariable LineId id,
-            @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) @Nullable String ifMatch,
+            IfMatch ifMatch,
             @RequestHeader(name = "Idempotency-Key", required = false) @Nullable String idempotencyKey,
             @RequestBody MoveRequest body) {
         Line line = lineService.moveLeft(id, ifMatch, body.by(), idempotencyKey);
@@ -84,7 +80,7 @@ public class LineController {
     @PutMapping("{id}/right")
     ResponseEntity<EntityModel<Line>> moveRight(
             @PathVariable LineId id,
-            @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) @Nullable String ifMatch,
+            IfMatch ifMatch,
             @RequestHeader(name = "Idempotency-Key", required = false) @Nullable String idempotencyKey,
             @RequestBody MoveRequest body) {
         Line line = lineService.moveRight(id, ifMatch, body.by(), idempotencyKey);

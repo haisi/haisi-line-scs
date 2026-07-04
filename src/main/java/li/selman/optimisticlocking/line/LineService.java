@@ -4,7 +4,7 @@ import jakarta.transaction.Transactional;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Consumer;
-import li.selman.optimisticlocking.shared.ETagMatcher;
+import li.selman.optimisticlocking.shared.IfMatch;
 import li.selman.optimisticlocking.shared.PreconditionRequired;
 import li.selman.optimisticlocking.shared.StaleStateIdentified;
 import li.selman.optimisticlocking.shared.idempotency.IdempotencyKey;
@@ -25,10 +25,10 @@ public class LineService {
     }
 
     @Transactional
-    public void delete(LineId id, @Nullable String ifMatchVersion) {
+    public void delete(LineId id, IfMatch ifMatch) {
         Line line = repo.findById(id).orElse(null);
         if (line == null) return; // already gone -> 204
-        if (ifMatchVersion != null && !ETagMatcher.matchesIfMatch(ifMatchVersion, line.getLockVersion())) {
+        if (!ifMatch.isAbsent() && !ifMatch.matches(line.getLockVersion())) {
             // In case the user only want to delete the resource, iff it has not changed yet
             throw new StaleStateIdentified(id.id()); // 412
         }
@@ -57,13 +57,13 @@ public class LineService {
     }
 
     @Transactional
-    public Line moveLeft(LineId id, @Nullable String ifMatchVersion, int by, @Nullable String idempotencyKey) {
-        return move(id, new LineCommand.MoveLeft(by), ifMatchVersion, idempotencyKey, line -> line.moveLeft(by));
+    public Line moveLeft(LineId id, IfMatch ifMatch, int by, @Nullable String idempotencyKey) {
+        return move(id, new LineCommand.MoveLeft(by), ifMatch, idempotencyKey, line -> line.moveLeft(by));
     }
 
     @Transactional
-    public Line moveRight(LineId id, @Nullable String ifMatchVersion, int by, @Nullable String idempotencyKey) {
-        return move(id, new LineCommand.MoveRight(by), ifMatchVersion, idempotencyKey, line -> line.moveRight(by));
+    public Line moveRight(LineId id, IfMatch ifMatch, int by, @Nullable String idempotencyKey) {
+        return move(id, new LineCommand.MoveRight(by), ifMatch, idempotencyKey, line -> line.moveRight(by));
     }
 
     /**
@@ -76,11 +76,7 @@ public class LineService {
      * rolls back both together -- a failed attempt never leaves behind a replay record.
      */
     private Line move(
-            LineId id,
-            LineCommand command,
-            @Nullable String ifMatchVersion,
-            @Nullable String idempotencyKey,
-            Consumer<Line> apply) {
+            LineId id, LineCommand command, IfMatch ifMatch, @Nullable String idempotencyKey, Consumer<Line> apply) {
         String fingerprint = command.toString();
         if (idempotencyKey != null) {
             UUID key = UUID.fromString(idempotencyKey);
@@ -93,12 +89,12 @@ public class LineService {
             }
         }
 
-        if (ifMatchVersion == null) {
+        if (ifMatch.isAbsent()) {
             throw new PreconditionRequired(id.id()); // 428 Precondition Required
         }
 
         Line line = repo.findForUpdate(id).orElseThrow(() -> new LineNotFound(id.id()));
-        if (!ETagMatcher.matchesIfMatch(ifMatchVersion, line.getLockVersion())) {
+        if (!ifMatch.matches(line.getLockVersion())) {
             throw new StaleStateIdentified(id.id()); // 412 Precondition Failed
         }
 

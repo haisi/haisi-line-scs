@@ -1,0 +1,17 @@
+package li.selman.optimisticlocking.shared.web;
+
+import java.util.List;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.method.support.HandlerMethodArgumentResolver;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+
+/** Wires {@link IfMatchArgumentResolver} and {@link IfNoneMatchArgumentResolver} into Spring MVC. */
+@Configuration
+public class ConditionalRequestWebConfig implements WebMvcConfigurer {
+
+    @Override
+    public void addArgumentResolvers(List<HandlerMethodArgumentResolver> resolvers) {
+        resolvers.add(new IfMatchArgumentResolver());
+        resolvers.add(new IfNoneMatchArgumentResolver());
+    }
+}
