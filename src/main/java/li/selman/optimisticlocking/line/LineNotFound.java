@@ -1,0 +1,19 @@
+package li.selman.optimisticlocking.line;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.ResponseStatus;
+
+import java.util.UUID;
+
+/**
+ * Thrown when an operation targets a line id that doesn't exist.
+ * In HTTP world -> 404 Not Found.
+ */
+@ResponseStatus(HttpStatus.NOT_FOUND)
+public class LineNotFound extends RuntimeException {
+
+    public LineNotFound(UUID id) {
+        super(String.format("Line %s not found", id));
+    }
+
+}
