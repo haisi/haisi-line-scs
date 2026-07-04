@@ -1,6 +1,8 @@
 package li.selman.optimisticlocking.line.web;
 
 import li.selman.optimisticlocking.line.Line;
+import li.selman.optimisticlocking.line.LineCommand;
+import li.selman.optimisticlocking.shared.AggregateCommands;
 import org.springframework.hateoas.EntityModel;
 import org.springframework.hateoas.IanaLinkRelations;
 import org.springframework.hateoas.server.EntityLinks;
@@ -14,6 +16,8 @@ import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.methodOn;
 class LineRepresentationModelProcessor implements RepresentationModelProcessor<EntityModel<Line>> {
 
     private final EntityLinks entityLinks;
+    private final AggregateCommands<Line, LineCommand> aggregateCommands = new AggregateCommands<>(Line.class, LineCommand.class);
+
 
     LineRepresentationModelProcessor(EntityLinks entityLinks) {
         this.entityLinks = entityLinks;
@@ -22,14 +26,20 @@ class LineRepresentationModelProcessor implements RepresentationModelProcessor<E
     @Override
     public EntityModel<Line> process(EntityModel<Line> model) {
         Line content = model.getContent();
+
         model.addIf(!model.hasLink(IanaLinkRelations.SELF),
                 () -> entityLinks.linkForItemResource(Line.class, content.getId()).withSelfRel());
-        model.addIf(content.canMoveLeft(),
-                () -> linkTo(methodOn(LineController.class).moveLeft(content.getId(), null, null, null))
-                        .withRel("move-left"));
-        model.addIf(content.canMoveRight(),
-                () -> linkTo(methodOn(LineController.class).moveRight(content.getId(), null, null, null))
-                        .withRel("move-right"));
+
+        aggregateCommands.getCommands()
+                .forEach(command -> addCommandLink(model, content, command));
         return model;
+    }
+
+    private void addCommandLink(
+            EntityModel<Line> model,
+            Line line,
+            Class<? extends LineCommand> commandType) {
+        var rel = aggregateCommands.getRel(commandType);
+        model.addIf(line.can(commandType), () -> entityLinks.linkFor(Line.class).slash(rel).withRel(rel));
     }
 }
