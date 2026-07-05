@@ -2,7 +2,6 @@ package li.selman.optimisticlocking.line;
 
 import ch.admin.bit.jeap.security.resource.semanticAuthentication.SemanticApplicationRole;
 import ch.admin.bit.jeap.security.resource.semanticAuthentication.ServletSemanticAuthorization;
-import java.util.Set;
 import org.jmolecules.architecture.onion.simplified.ApplicationRing;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
@@ -89,15 +88,5 @@ public class LineAuthorization {
         if (!isOwner(line)) {
             throw new AccessDeniedException("Not affiliated with business partner " + line.getBusinessPartnerId());
         }
-    }
-
-    /** True for a caller holding {@code READ_ROLE} user-independently, e.g. the BAZG "admin". */
-    public boolean canReadAll() {
-        return authorization.hasRoleForAllPartners(READ_ROLE);
-    }
-
-    /** Every business partner the caller holds {@code READ_ROLE} for -- meaningless if {@link #canReadAll()}. */
-    public Set<String> readableBusinessPartnerIds() {
-        return Set.copyOf(authorization.getPartnersForRole(READ_ROLE));
     }
 }

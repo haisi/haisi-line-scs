@@ -48,8 +48,7 @@ public class LineController {
      *                  null for AdBAZG.
      */
     @GetMapping("{id}")
-    @PreAuthorize(
-            "hasRoleForPartner(@lineAuthorization.READ_ROLE, #partnerId) || hasRole(@lineAuthorization.READ_ROLE)")
+    @PreAuthorize("hasRoleForPartner(@lineAuthorization.READ_ROLE, #partnerId)")
     ResponseEntity<EntityModel<Line>> get(@PathVariable LineId id, IfNoneMatch ifNoneMatch,
                                           @RequestHeader(name = "X-Partner-Id", required = false) @Nullable String partnerId) {
         return lineRepository
@@ -70,38 +69,33 @@ public class LineController {
     /**
      * BusinessPartner can only view their own lines. Users with the <b>user-role</b> can view all lines.
      *
-     * <p>Without {@code X-Partner-Id}, a business-partner caller sees the union of every partner
-     * they hold {@code READ_ROLE} for -- never partners outside that set, and never a partner they
-     * merely hold some unrelated role for.
+     * <p>{@code X-Partner-Id} is mandatory for a business-partner caller (only {@code null} for a
+     * user-independent caller like AdBAZG): without it, {@code hasRoleForPartner} has no partner to
+     * check the role against and denies the request, so there is no fallback that leaks a partner's
+     * lines to a caller who never named it.
      */
     @GetMapping
-    @PreAuthorize(
-            "hasRoleForPartner(@lineAuthorization.READ_ROLE, #partnerId) || hasRole(@lineAuthorization.READ_ROLE)")
+    @PreAuthorize("hasRoleForPartner(@lineAuthorization.READ_ROLE, #partnerId)")
     ResponseEntity<Page<Line>> getAll(
             Pageable pageable, @RequestHeader(name = "X-Partner-Id", required = false) @Nullable String partnerId) {
-        Page<Line> lines;
-        if (partnerId != null) {
-            lines = lineRepository.findAllByBusinessPartnerIdIn(List.of(partnerId), pageable);
-        } else if (lineAuthorization.canReadAll()) {
-            // Only possible with the user role instead of bp role
-            lines = lineRepository.findAll(pageable);
-        } else {
-            lines = lineRepository.findAllByBusinessPartnerIdIn(lineAuthorization.readableBusinessPartnerIds(), pageable);
-        }
+        // partnerId == null only ever reaches here for a caller holding READ_ROLE user-independently
+        // (@PreAuthorize already denied every other null-partnerId caller above).
+        Page<Line> lines = partnerId != null
+                ? lineRepository.findAllByBusinessPartnerIdIn(List.of(partnerId), pageable)
+                : lineRepository.findAll(pageable);
         return ResponseEntity.ok(lines);
     }
 
     @DeleteMapping("{id}")
     // Delete is only allowed by user-role, i.e. by AdBAZG, not by BusinessPartner
-    @PreAuthorize("hasRole(@lineAuthorization.DELETE_ROLE)")
+    @PreAuthorize("hasRoleForAllPartners(@lineAuthorization.DELETE_ROLE)")
     ResponseEntity<Void> delete(@PathVariable LineId id, IfMatch ifMatch) {
         lineService.delete(id, ifMatch);
         return ResponseEntity.noContent().build();
     }
 
     @PutMapping("{id}")
-    @PreAuthorize(
-            "hasRoleForPartner(@lineAuthorization.CREATE_ROLE, #partnerId) || hasRole(@lineAuthorization.CREATE_ROLE)")
+    @PreAuthorize("hasRoleForPartner(@lineAuthorization.CREATE_ROLE, #partnerId)")
     ResponseEntity<EntityModel<Line>> create(@PathVariable LineId id, @RequestBody CreateLineRequest body, @RequestHeader(name = "X-Partner-Id", required = false) @Nullable String partnerId) {
         LineCreationResult result =
                 lineService.create(new LineCommand.CreateLine(id, body.left(), body.right(), body.businessPartnerId()));
@@ -116,8 +110,7 @@ public class LineController {
     }
 
     @PutMapping("{id}/left")
-    @PreAuthorize(
-            "hasRoleForPartner(@lineAuthorization.CREATE_ROLE, #partnerId) || hasRole(@lineAuthorization.CREATE_ROLE)")
+    @PreAuthorize("hasRoleForPartner(@lineAuthorization.CREATE_ROLE, #partnerId)")
     ResponseEntity<EntityModel<Line>> moveLeft(
             @PathVariable LineId id,
             IfMatch ifMatch,
@@ -129,8 +122,7 @@ public class LineController {
     }
 
     @PutMapping("{id}/right")
-    @PreAuthorize(
-            "hasRoleForPartner(@lineAuthorization.CREATE_ROLE, #partnerId) || hasRole(@lineAuthorization.CREATE_ROLE)")
+    @PreAuthorize("hasRoleForPartner(@lineAuthorization.CREATE_ROLE, #partnerId)")
     ResponseEntity<EntityModel<Line>> moveRight(
             @PathVariable LineId id,
             IfMatch ifMatch,

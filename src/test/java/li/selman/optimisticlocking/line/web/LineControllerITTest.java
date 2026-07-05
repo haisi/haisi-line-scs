@@ -3,12 +3,10 @@ package li.selman.optimisticlocking.line.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.boot.test.context.SpringBootTest.WebEnvironment.DEFINED_PORT;
 
-import ch.admin.bit.jeap.security.resource.semanticAuthentication.SemanticApplicationRole;
 import ch.admin.bit.jeap.security.resource.token.JeapAuthenticationContext;
 import ch.admin.bit.jeap.security.test.jws.JwsBuilderFactory;
 import ch.admin.bit.jeap.security.test.resource.configuration.JeapOAuth2IntegrationTestResourceConfiguration;
 
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -85,8 +83,15 @@ class LineControllerITTest {
      * roles under test -- so the pre-existing (non-authorization-focused) tests below don't incidentally
      * start testing authorization too. Tests that specifically exercise a role/ownership rule mint their
      * own narrower token via {@link #authedAs}.
+     *
+     * <p>Carries a default {@code X-Partner-Id: acme} header: every business-partner-scoped caller
+     * must always declare which partner it acts as (only a user-independent caller like AdBAZG may
+     * omit it), so the pre-existing tests below need it on every request too.
      */
     RestTestClient authedClient;
+
+    /** The bearer token behind {@link #authedClient}, without its baked-in {@code X-Partner-Id} default. */
+    private String authedToken;
 
     public static final String BP_ID_COOP_PRONTO = "coop_pronto";
     public static final String BP_ID_COOP_JUMBO = "coop_jumbo";
@@ -136,14 +141,18 @@ class LineControllerITTest {
 
         // line_#create for the fixture's partner (business-partner-scoped) plus line_#delete as a
         // regular/internal user (user-independent) -- these are deliberately two different claims.
-        authedClient = authedAs(jwsBuilderFactory
+        authedToken = jwsBuilderFactory
                 .createValidForFixedLongPeriodBuilder("test-subject", JeapAuthenticationContext.USER)
                 .withBusinessPartnerRoles(
                         LineFixture.BUSINESS_PARTNER_ID, LineAuthorization.CREATE_ROLE, LineAuthorization.READ_ROLE)
                 .withBusinessPartnerRoles("Roche", LineAuthorization.DELETE_ROLE)
                 .withUserRoles(LINE_DELETE)
                 .build()
-                .serialize());
+                .serialize();
+        authedClient = client.mutate()
+                .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + authedToken)
+                .defaultHeader("X-Partner-Id", LineFixture.BUSINESS_PARTNER_ID)
+                .build();
     }
 
     @AfterEach
@@ -869,6 +878,7 @@ class LineControllerITTest {
             authedAs(tokenFor(LineFixture.BUSINESS_PARTNER_ID, LINE_CREATE, LINE_READ))
                     .get()
                     .uri("/lines/{id}", id)
+                    .header("X-Partner-Id", LineFixture.BUSINESS_PARTNER_ID)
                     .accept(MediaTypes.HAL_JSON)
                     .exchange()
                     .expectStatus()
@@ -895,7 +905,6 @@ class LineControllerITTest {
             authedClient
                     .get()
                     .uri("/lines?size=2")
-                    .header("X-Partner-Id", LineFixture.BUSINESS_PARTNER_ID)
                     .exchange()
                     .expectStatus()
                     .isOk()
@@ -983,6 +992,7 @@ class LineControllerITTest {
             authedAs(tokenFor(OTHER_BUSINESS_PARTNER_ID, LINE_CREATE))
                     .put()
                     .uri("/lines/{id}", id)
+                    .header("X-Partner-Id", OTHER_BUSINESS_PARTNER_ID)
                     .body(new CreateLineRequest(1, 5, LineFixture.BUSINESS_PARTNER_ID))
                     .exchange()
                     .expectStatus()
@@ -997,9 +1007,10 @@ class LineControllerITTest {
             UUID id = UUID.randomUUID();
             lineRepository.save(LineFixture.newBuilder().id(id).build()); // owned by LineFixture.BUSINESS_PARTNER_ID
 
-            authedAs(tokenFor(OTHER_BUSINESS_PARTNER_ID, LINE_CREATE))
+            authedAs(tokenFor(OTHER_BUSINESS_PARTNER_ID, LINE_CREATE, LINE_READ))
                     .get()
                     .uri("/lines/{id}", id)
+                    .header("X-Partner-Id", OTHER_BUSINESS_PARTNER_ID)
                     .exchange()
                     .expectStatus()
                     .isForbidden();
@@ -1017,6 +1028,7 @@ class LineControllerITTest {
             authedAs(tokenFor(OTHER_BUSINESS_PARTNER_ID, LINE_CREATE))
                     .put()
                     .uri("/lines/{id}/left", id)
+                    .header("X-Partner-Id", OTHER_BUSINESS_PARTNER_ID)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .body(new MoveRequest(1))
                     .exchange()
@@ -1032,7 +1044,7 @@ class LineControllerITTest {
          */
         @Test
         void getAll_withPartnerIdHeaderForUnaffiliatedPartner_returns403() {
-            authedClient
+            authedAs(authedToken)
                     .get()
                     .uri("/lines")
                     .header("X-Partner-Id", OTHER_BUSINESS_PARTNER_ID)
@@ -1086,9 +1098,10 @@ class LineControllerITTest {
      *       different resource entirely. Being "in" a GP is not sufficient; the role must be for
      *       the {@code line} resource specifically.</li>
      *   <li>{@code TOKEN_MGB_EMPLOYEE}: affiliated with two business partners (Denner and
-     *       Migrolino), both fully authorized for {@code line}. A single line's owning partner
-     *       already disambiguates GET/move, so no {@code X-Partner-Id} is needed there; only
-     *       listing ("GetAll") needs it to narrow from "all my partners" to just one.</li>
+     *       Migrolino), both fully authorized for {@code line}. Unlike {@code TOKEN_BAZG_EMPLOYEE},
+     *       a business-partner caller must state {@code X-Partner-Id} on <b>every</b> request --
+     *       there is no coarse "any partner of mine" fallback, so MGB has to switch the header to
+     *       move between acting as Denner and acting as Migrolino.</li>
      *   <li>{@code TOKEN_EMPTY}: neither a user role nor any business-partner role -- forbidden
      *       everywhere.</li>
      * </ul>
@@ -1166,16 +1179,24 @@ class LineControllerITTest {
             authedAs(TOKEN_COOP_EMPLOYEE)
                     .put()
                     .uri("/lines/{id}", id)
+                    .header("X-Partner-Id", BP_ID_COOP_JUMBO)
                     .body(new CreateLineRequest(3, 9, BP_ID_COOP_JUMBO))
                     .exchange()
                     .expectStatus()
                     .isCreated();
 
-            authedAs(TOKEN_COOP_EMPLOYEE).get().uri("/lines/{id}", id).exchange().expectStatus().isOk();
+            authedAs(TOKEN_COOP_EMPLOYEE)
+                    .get()
+                    .uri("/lines/{id}", id)
+                    .header("X-Partner-Id", BP_ID_COOP_JUMBO)
+                    .exchange()
+                    .expectStatus()
+                    .isOk();
 
             authedAs(TOKEN_COOP_EMPLOYEE)
                     .put()
                     .uri("/lines/{id}/left", id)
+                    .header("X-Partner-Id", BP_ID_COOP_JUMBO)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .body(new MoveRequest(1))
                     .exchange()
@@ -1188,6 +1209,7 @@ class LineControllerITTest {
             authedAs(TOKEN_COOP_EMPLOYEE)
                     .put()
                     .uri("/lines/{id}", UUID.randomUUID())
+                    .header("X-Partner-Id", BP_ID_COOP_PRONTO)
                     .body(new CreateLineRequest(1, 5, BP_ID_COOP_PRONTO))
                     .exchange()
                     .expectStatus()
@@ -1206,6 +1228,7 @@ class LineControllerITTest {
             authedAs(TOKEN_COOP_EMPLOYEE)
                     .get()
                     .uri("/lines/{id}", id)
+                    .header("X-Partner-Id", BP_ID_COOP_PRONTO)
                     .exchange()
                     .expectStatus()
                     .isForbidden();
@@ -1213,6 +1236,7 @@ class LineControllerITTest {
             authedAs(TOKEN_COOP_EMPLOYEE)
                     .put()
                     .uri("/lines/{id}/left", id)
+                    .header("X-Partner-Id", BP_ID_COOP_PRONTO)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .body(new MoveRequest(1))
                     .exchange()
@@ -1220,8 +1244,22 @@ class LineControllerITTest {
                     .isForbidden();
         }
 
+        /**
+         * {@code X-Partner-Id} is mandatory for a business-partner caller -- there is no coarse
+         * "any partner of mine" fallback once the header is missing, unlike a global-role admin.
+         */
         @Test
-        void coopEmployee_getAll_withoutPartnerHeader_seesOnlyJumbosLines_notProntos() {
+        void coopEmployee_getAll_withoutPartnerHeader_isForbidden() {
+            authedAs(TOKEN_COOP_EMPLOYEE)
+                    .get()
+                    .uri("/lines")
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden();
+        }
+
+        @Test
+        void coopEmployee_getAll_withPartnerHeader_scopesToJumbosLines_notProntos() {
             lineRepository.save(
                     LineFixture.newBuilder().randomId().businessPartnerId(BP_ID_COOP_JUMBO).build());
             lineRepository.save(
@@ -1230,6 +1268,7 @@ class LineControllerITTest {
             authedAs(TOKEN_COOP_EMPLOYEE)
                     .get()
                     .uri("/lines")
+                    .header("X-Partner-Id", BP_ID_COOP_JUMBO)
                     .exchange()
                     .expectStatus()
                     .isOk()
@@ -1238,14 +1277,33 @@ class LineControllerITTest {
                     .isEqualTo(1);
         }
 
+        /**
+         * COOP holds {@code line_#read} for Jumbo, not Pronto -- naming Pronto via {@code
+         * X-Partner-Id} must not let Jumbo's role "cover" a partner it was never granted for.
+         */
         @Test
-        void mgbEmployee_canCreateReadAndMove_forBothOfItsPartners_noSwitchingNeededForASingleLine() {
+        void coopEmployee_getAll_cannotUseJumbosReadRole_toListProntosLines_viaPartnerHeader() {
+            lineRepository.save(
+                    LineFixture.newBuilder().randomId().businessPartnerId(BP_ID_COOP_PRONTO).build());
+
+            authedAs(TOKEN_COOP_EMPLOYEE)
+                    .get()
+                    .uri("/lines")
+                    .header("X-Partner-Id", BP_ID_COOP_PRONTO)
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden();
+        }
+
+        @Test
+        void mgbEmployee_canCreateReadAndMove_forBothOfItsPartners_bySwitchingThePartnerHeader() {
             UUID dennerLine = UUID.randomUUID();
             UUID migrolinoLine = UUID.randomUUID();
 
             authedAs(TOKEN_MGB_EMPLOYEE)
                     .put()
                     .uri("/lines/{id}", dennerLine)
+                    .header("X-Partner-Id", BP_ID_MGB_DENNER)
                     .body(new CreateLineRequest(1, 5, BP_ID_MGB_DENNER))
                     .exchange()
                     .expectStatus()
@@ -1253,16 +1311,25 @@ class LineControllerITTest {
             authedAs(TOKEN_MGB_EMPLOYEE)
                     .put()
                     .uri("/lines/{id}", migrolinoLine)
+                    .header("X-Partner-Id", BP_ID_MGB_MIGROLINO)
                     .body(new CreateLineRequest(1, 5, BP_ID_MGB_MIGROLINO))
                     .exchange()
                     .expectStatus()
                     .isCreated();
 
-            // the line's own owning partner disambiguates -- no X-Partner-Id header needed here
-            authedAs(TOKEN_MGB_EMPLOYEE).get().uri("/lines/{id}", dennerLine).exchange().expectStatus().isOk();
+            // acting as Denner can't see Migrolino's line, and vice versa -- each request states
+            // exactly one partner, matching the role it holds for that line
+            authedAs(TOKEN_MGB_EMPLOYEE)
+                    .get()
+                    .uri("/lines/{id}", dennerLine)
+                    .header("X-Partner-Id", BP_ID_MGB_DENNER)
+                    .exchange()
+                    .expectStatus()
+                    .isOk();
             authedAs(TOKEN_MGB_EMPLOYEE)
                     .get()
                     .uri("/lines/{id}", migrolinoLine)
+                    .header("X-Partner-Id", BP_ID_MGB_MIGROLINO)
                     .exchange()
                     .expectStatus()
                     .isOk();
@@ -1270,6 +1337,7 @@ class LineControllerITTest {
             authedAs(TOKEN_MGB_EMPLOYEE)
                     .put()
                     .uri("/lines/{id}/left", dennerLine)
+                    .header("X-Partner-Id", BP_ID_MGB_DENNER)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .body(new MoveRequest(1))
                     .exchange()
@@ -1278,30 +1346,17 @@ class LineControllerITTest {
         }
 
         /**
-         * Without {@code X-Partner-Id}, listing falls back to the union of every partner the
-         * caller holds {@code line_#read} for -- here both of MGB's partners, but not the
-         * unaffiliated third one.
+         * {@code X-Partner-Id} is mandatory for a business-partner caller -- there is no coarse
+         * "any partner of mine" fallback once the header is missing, unlike a global-role admin.
          */
         @Test
-        void mgbEmployee_getAll_withoutPartnerHeader_seesBothPartnersLinesCombined() {
-            lineRepository.save(
-                    LineFixture.newBuilder().randomId().businessPartnerId(BP_ID_MGB_DENNER).build());
-            lineRepository.save(LineFixture.newBuilder()
-                    .randomId()
-                    .businessPartnerId(BP_ID_MGB_MIGROLINO)
-                    .build());
-            lineRepository.save(
-                    LineFixture.newBuilder().randomId().businessPartnerId("other-corp").build());
-
+        void mgbEmployee_getAll_withoutPartnerHeader_isForbidden() {
             authedAs(TOKEN_MGB_EMPLOYEE)
                     .get()
                     .uri("/lines")
                     .exchange()
                     .expectStatus()
-                    .isOk()
-                    .expectBody()
-                    .jsonPath("$.page.totalElements")
-                    .isEqualTo(2);
+                    .isForbidden();
         }
 
         /**
