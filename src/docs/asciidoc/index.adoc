@@ -1,0 +1,215 @@
+= Optimistic Locking, Idempotency &amp; Modular Architecture
+Hasan Selman Kara
+:doctype: book
+:icons: font
+:source-highlighter: coderay
+:toc: left
+:toclevels: 3
+:sectlinks:
+:sectanchors:
+:operation-curl-request-title: Example request (curl)
+:operation-http-request-title: HTTP request
+:operation-http-response-title: HTTP response
+:operation-request-fields-title: Request fields
+:operation-response-fields-title: Response fields
+:operation-request-headers-title: Request headers
+:operation-response-headers-title: Response headers
+:operation-path-parameters-title: Path parameters
+:operation-links-title: Links
+
+This guide documents the `optimistic-locking` sample: a Spring Boot application that exists to
+demonstrate, in working code, three ideas from the accompanying conference talk:
+
+* Optimistic locking with JPA `@Version` -- and why the version has to live on the *aggregate
+  root*, not on a child row.
+* Mapping concurrency conflicts onto HTTP status codes and headers (`ETag`, `If-Match`,
+  `If-None-Match`).
+* Designing an idempotent HTTP API with the `Idempotency-Key` header.
+
+The running example is a `Line`: an aggregate with a `LeftPoint` and a `RightPoint`, each of which
+can be moved independently, subject to a couple of business invariants. Everything below is
+generated from the code itself: the module structure comes from
+https://spring.io/projects/spring-modulith[Spring Modulith]'s own analysis of the compiled
+application, and every HTTP request/response pair comes from a passing
+https://spring.io/projects/spring-restdocs[Spring REST Docs] test -- if the documentation and the
+behaviour ever disagree, the build fails before either does.
+
+== Architecture
+
+The application is organised as two Spring Modulith application modules. `line` is the one bounded
+context this app exists to demonstrate; `shared` is an intentionally-`OPEN` kernel of
+concurrency/idempotency vocabulary that `line` (and any future module) depends on.
+
+.Module structure
+plantuml::{modulith-docs}/components.puml[format=svg]
+
+=== Shared Kernel
+
+include::{modulith-docs}/module-shared.adoc[]
+
+.Shared Kernel internals
+plantuml::{modulith-docs}/module-shared.puml[format=svg]
+
+=== Line
+
+include::{modulith-docs}/module-line.adoc[]
+
+.Line module internals
+plantuml::{modulith-docs}/module-line.puml[format=svg]
+
+The `Line` aggregate root carries the JPA `@Version` (`lockVersion`); its `LeftPoint` and
+`RightPoint` children deliberately do **not** have one of their own. The consistency boundary is
+the aggregate, not the row -- giving a child its own version would let two concurrent edits to
+*different* points of the *same* line each succeed silently, even though together they might
+violate an invariant that only the aggregate can see (e.g. the combined update budget below).
+Because a move only ever touches a child row, Hibernate would not otherwise bump the root's
+version at all; `LineRepository.findForUpdate` loads the aggregate with
+`@Lock(OPTIMISTIC_FORCE_INCREMENT)` specifically to force that bump at commit.
+
+== Domain invariants
+
+`Line.moveLeft`/`Line.moveRight` enforce two invariants before touching either child, and expose
+the same checks as `canMoveLeft()`/`canMoveRight()` so the web layer can reflect them as hypermedia
+affordances (see <<reading-a-line>>):
+
+[cols="1,2,1", options="header"]
+|===
+|Invariant |Enforced in |Violation response
+
+|The left point may never exceed the right point (checked on both create and move).
+|`Line.moveLeft`, `Line.moveRight`, `Line` constructor
+|`422 Unprocessable Content`
+
+|The left point may never go below zero.
+|`Line.moveLeft`
+|`422 Unprocessable Content`
+
+|At most 5 updates total, summed across *both* points, may ever be applied to a line.
+|`Line.validateInvariants`
+|`422 Unprocessable Content`
+|===
+
+Both example violations below are captured from real, passing tests: moving left when it is
+already at zero, and moving with an exhausted update budget.
+
+.Attempting to move left below zero
+operation::move-left-below-zero[snippets='http-request,http-response']
+
+.Attempting to move after the update budget is exhausted
+operation::move-left-update-budget-exhausted[snippets='http-request,http-response']
+
+NOTE: Both invariants return the same `422`; the response body doesn't distinguish which one
+fired, and this guide won't invent a schema it can't verify. What *is* observable, and reflected
+in <<reading-a-line, GET's hypermedia links>>, is that once either invariant would be violated, the
+corresponding `move-left`/`move-right` relation simply stops being offered.
+
+== HTTP API
+
+=== Creating a line
+
+`PUT /lines/{id}` is a client-generated-id create: the caller picks the `id`, so a byte-for-byte
+identical retry is naturally idempotent (RFC 9110 §9.2.2) -- no `Idempotency-Key` needed here.
+
+operation::create-line[snippets='http-request,path-parameters,request-fields,http-response,response-headers,response-fields']
+
+Retrying with the exact same body is a no-op replay of the existing resource (`200`, not a second
+`201`):
+
+operation::create-line-replay[snippets='http-request,http-response']
+
+Retrying with a *different* body for the same `id` is a genuine conflict. No precondition was ever
+stated for a create, so per the status-code rule in <<concurrency-control>> this is `409 Conflict`,
+not `412`:
+
+operation::create-line-conflict[snippets='http-request,http-response']
+
+[[reading-a-line]]
+=== Reading a line
+
+operation::get-line[snippets='http-request,response-headers,response-fields,links']
+
+The `move-left`/`move-right` links are present only while the corresponding move would currently
+succeed -- they disappear exactly when the invariants in the previous section would otherwise
+reject the write, so a well-behaved client never needs to guess.
+
+A client holding a cached representation can make the request conditional with `If-None-Match`; if
+its entity-tag still matches, the server answers without a body:
+
+operation::get-line-not-modified[snippets='request-headers,http-response']
+
+=== Moving a point
+
+`PUT /lines/{id}/left` and `PUT /lines/{id}/right` are symmetric; only `left` is shown below.
+
+operation::move-left[snippets='http-request,path-parameters,request-headers,request-fields,http-response,response-headers,response-fields']
+
+=== Deleting a line
+
+operation::delete-line[snippets='http-request,path-parameters,http-response']
+
+A retry of an already-completed delete is a no-op `204`, not a `404` -- see
+`LineControllerITTest.Delete#isIdempotent` for that behaviour asserted end-to-end.
+
+[[concurrency-control]]
+== Non-functional concern: optimistic locking &amp; concurrency control
+
+Every write that isn't a create is conditional: the client must state which version of the
+resource it read, and the server rejects the write outright if that version is no longer current.
+This app follows one decision rule throughout, matching the accompanying talk's cheat sheet:
+
+[cols="2,1", options="header"]
+|===
+|Situation |HTTP status
+
+|Concurrent writers collide and neither stated a precondition (`If-Match`).
+|`409 Conflict`
+
+|The client *did* state `If-Match`, but it no longer matches the current version.
+|`412 Precondition Failed`
+
+|A business rule/invariant would be violated by an otherwise well-formed request.
+|`422 Unprocessable Content`
+
+|`If-Match` is required for this write, but the client sent none.
+|`428 Precondition Required`
+|===
+
+A move is rejected with `428` if `If-Match` is absent at all:
+
+operation::move-left-missing-precondition[snippets='http-request,http-response']
+
+...and with `412` if it names a version that is no longer current -- here, because a second writer's
+move landed first:
+
+operation::move-left-stale-precondition[snippets='http-request,http-response']
+
+The `409` case is different in kind: it only ever happens when *nobody* stated a precondition, so
+there is nothing to compare against a "current" version at request time -- the conflict is only
+detectable at commit, via the forced-increment version CAS described in <<Architecture>>.
+`LineControllerITTest.PutMove#concurrentMovesWithoutPrecondition_onlyOneSucceeds` exercises this
+directly: eight requests race with no `If-Match` at all, exactly one succeeds, and every other one
+resolves to either `409` or `412` depending on scheduling -- both are correct outcomes of the very
+same race.
+
+Every response that changes the resource's state -- `create`, `move-left`, `move-right` -- carries
+a fresh `ETag`, so a client always has what it needs to build its next `If-Match` without a
+separate `GET`.
+
+== Non-functional concern: idempotency
+
+`Idempotency-Key` (an IETF draft header, distinct from the RFC 9110 idempotency already built into
+`PUT`) supplements a move's built-in optimistic-locking flow for callers whose retry logic can't
+rely on tracking the server's version alone -- for example, a client that must retry after a
+network timeout without knowing whether its first attempt actually landed.
+
+The gate order matters: a recognised `Idempotency-Key` is checked *before* `If-Match` is even
+looked at, so a retry replays the original result even if its own `If-Match` has since gone stale:
+
+operation::move-left-idempotent-replay[snippets='request-headers,http-request,http-response']
+
+Reusing the same key with a *different* request body -- a different fingerprint for the same key --
+is treated as a client error (`422`), not a replay; see
+`LineControllerITTest.PutMove#reusingIdempotencyKeyWithDifferentBody_returns422`. The idempotency
+record is written in the *same* transaction as the move itself, so a lost version CAS rolls both
+back together -- a failed attempt never leaves behind a replay record that could mask a later,
+genuine retry.
