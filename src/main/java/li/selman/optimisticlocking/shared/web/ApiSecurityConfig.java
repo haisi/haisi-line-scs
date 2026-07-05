@@ -50,6 +50,23 @@ public class ApiSecurityConfig {
     }
 
     /**
+     * The generated API guide under {@code /docs/**} (see the asciidoctor-maven-plugin and
+     * maven-resources-plugin executions in {@code pom.xml}) is static, read-only, and contains
+     * nothing more sensitive than the {@code /lines/**} chain's own request/response shapes -- so,
+     * unlike the API itself, it's left open for anyone following along with the talk to read
+     * without first minting a token. Ordered ahead of the starter's own catch-all chain, the same
+     * way {@link #apiSecurityFilterChain} is.
+     */
+    @Bean
+    @Order(Ordered.LOWEST_PRECEDENCE - 2)
+    SecurityFilterChain docsSecurityFilterChain(HttpSecurity http) throws Exception {
+        http.securityMatcher("/docs/**")
+                .csrf(AbstractHttpConfigurer::disable)
+                .authorizeHttpRequests(authorize -> authorize.anyRequest().permitAll());
+        return http.build();
+    }
+
+    /**
      * {@link BusinessPartnerFilter} is a {@code @Component} solely so Spring can inject its {@code
      * ServletSemanticAuthorization} dependency; without this, Spring Boot would additionally
      * auto-register it as a servlet-container-wide filter on {@code /*}, running it a second time
