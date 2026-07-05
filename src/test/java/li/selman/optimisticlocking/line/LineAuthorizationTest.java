@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 
 class LineAuthorizationTest {
 
-    private static final String SYSTEM = "optimistic-locking";
+    private static final String SYSTEM = "wvs";
     private static final String ACME = "acme";
     private static final String OTHER_CORP = "other-corp";
 

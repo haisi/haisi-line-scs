@@ -20,6 +20,7 @@ import org.springframework.hateoas.EntityModel;
 import org.springframework.hateoas.server.ExposesResourceFor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -38,6 +39,7 @@ public class LineController {
     }
 
     @GetMapping("{id}")
+    @PreAuthorize("hasRole(@lineAuthorization.READ_ROLE)")
     ResponseEntity<EntityModel<Line>> get(@PathVariable LineId id, IfNoneMatch ifNoneMatch) {
         return lineRepository
                 .findById(id)
@@ -54,12 +56,14 @@ public class LineController {
     }
 
     @DeleteMapping("{id}")
+    @PreAuthorize("hasRole(@lineAuthorization.DELETE_ROLE)")
     ResponseEntity<Void> delete(@PathVariable LineId id, IfMatch ifMatch) {
         lineService.delete(id, ifMatch);
         return ResponseEntity.noContent().build();
     }
 
     @PutMapping("{id}")
+    @PreAuthorize("hasRole(@lineAuthorization.CREATE_ROLE)")
     ResponseEntity<EntityModel<Line>> create(@PathVariable LineId id, @RequestBody CreateLineRequest body) {
         LineCreationResult result =
                 lineService.create(new LineCommand.CreateLine(id, body.left(), body.right(), body.businessPartnerId()));
@@ -74,6 +78,7 @@ public class LineController {
     }
 
     @PutMapping("{id}/left")
+    @PreAuthorize("hasRole(@lineAuthorization.CREATE_ROLE)")
     ResponseEntity<EntityModel<Line>> moveLeft(
             @PathVariable LineId id,
             IfMatch ifMatch,
@@ -84,6 +89,7 @@ public class LineController {
     }
 
     @PutMapping("{id}/right")
+    @PreAuthorize("hasRole(@lineAuthorization.CREATE_ROLE)")
     ResponseEntity<EntityModel<Line>> moveRight(
             @PathVariable LineId id,
             IfMatch ifMatch,
@@ -94,7 +100,9 @@ public class LineController {
     }
 
     @GetMapping
-    ResponseEntity<Page<Line>> getAll(Pageable pageable) {
+    @PreAuthorize("hasRoleForPartner(@lineAuthorization.READ_ROLE, #partnerId) || hasRole(@lineAuthorization.READ_ROLE)")
+    ResponseEntity<Page<Line>> getAll(Pageable pageable,
+                                      @RequestHeader(name = "X-Partner-Id", required = false) @Nullable String partnerId) {
         Set<String> businessPartnerIds = lineAuthorization.currentBusinessPartnerIds();
         Page<Line> lines = businessPartnerIds.isEmpty()
                 ? Page.empty(pageable)

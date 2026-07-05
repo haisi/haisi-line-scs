@@ -1,5 +1,6 @@
 package li.selman.optimisticlocking.line;
 
+import ch.admin.bit.jeap.security.resource.semanticAuthentication.SemanticApplicationRole;
 import ch.admin.bit.jeap.security.resource.semanticAuthentication.ServletSemanticAuthorization;
 import java.util.Set;
 import org.jmolecules.architecture.onion.simplified.ApplicationRing;
@@ -22,6 +23,10 @@ public class LineAuthorization {
     private static final String RESOURCE = "line";
     private static final String CREATE = "create";
     private static final String DELETE = "delete";
+
+    public static final SemanticApplicationRole READ_ROLE = SemanticApplicationRole.builder().system("wvs").resource(RESOURCE).operation("read").build();
+    public static final SemanticApplicationRole DELETE_ROLE = SemanticApplicationRole.builder().system("wvs").resource(RESOURCE).operation("delete").build();
+    public static final SemanticApplicationRole CREATE_ROLE = SemanticApplicationRole.builder().system("wvs").resource(RESOURCE).operation("create").build();
 
     private final ServletSemanticAuthorization authorization;
 

@@ -17,6 +17,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import li.selman.optimisticlocking.line.LineAuthorization;
 import li.selman.optimisticlocking.line.LineFixture;
 import li.selman.optimisticlocking.line.LineRepository;
 import li.selman.optimisticlocking.line.LineService;
@@ -57,12 +59,12 @@ import org.springframework.test.web.servlet.client.RestTestClient;
 class LineControllerITTest {
 
     private static final SemanticApplicationRole LINE_CREATE = SemanticApplicationRole.builder()
-            .system("optimistic-locking")
+            .system("wvs")
             .resource("line")
             .operation("create")
             .build();
     private static final SemanticApplicationRole LINE_DELETE = SemanticApplicationRole.builder()
-            .system("optimistic-locking")
+            .system("wvs")
             .resource("line")
             .operation("delete")
             .build();
@@ -97,7 +99,8 @@ class LineControllerITTest {
         // regular/internal user (user-independent) -- these are deliberately two different claims.
         authedClient = authedAs(jwsBuilderFactory
                 .createValidFromNowBuilder("test-subject", JeapAuthenticationContext.USER, 5, ChronoUnit.MINUTES)
-                .withBusinessPartnerRoles(LineFixture.BUSINESS_PARTNER_ID, LINE_CREATE)
+                .withBusinessPartnerRoles(LineFixture.BUSINESS_PARTNER_ID, LineAuthorization.CREATE_ROLE, LineAuthorization.READ_ROLE)
+                .withBusinessPartnerRoles("Roche", LineAuthorization.DELETE_ROLE)
                 .withUserRoles(LINE_DELETE)
                 .build()
                 .serialize());
@@ -851,6 +854,7 @@ class LineControllerITTest {
             authedClient
                     .get()
                     .uri("/lines?size=2")
+                    .header("X-Partner-Id", LineFixture.BUSINESS_PARTNER_ID)
                     .exchange()
                     .expectStatus()
                     .isOk()
