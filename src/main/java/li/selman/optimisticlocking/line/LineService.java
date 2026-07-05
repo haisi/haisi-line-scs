@@ -10,9 +10,11 @@ import li.selman.optimisticlocking.shared.StaleStateIdentified;
 import li.selman.optimisticlocking.shared.idempotency.IdempotencyKey;
 import li.selman.optimisticlocking.shared.idempotency.IdempotencyKeyRepository;
 import li.selman.optimisticlocking.shared.idempotency.IdempotencyKeyReused;
+import org.jmolecules.architecture.onion.simplified.ApplicationRing;
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 
+@ApplicationRing
 @Service
 public class LineService {
 

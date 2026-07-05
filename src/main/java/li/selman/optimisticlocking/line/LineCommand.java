@@ -1,8 +1,10 @@
 package li.selman.optimisticlocking.line;
 
 import li.selman.optimisticlocking.shared.Command;
+import org.jmolecules.architecture.onion.simplified.DomainRing;
 import org.springframework.hateoas.server.core.Relation;
 
+@DomainRing
 public sealed interface LineCommand extends Command {
 
     record CreateLine(LineId id, int left, int right, String businessPartnerId) implements LineCommand {}

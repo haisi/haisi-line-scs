@@ -6,15 +6,30 @@ import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
+import com.tngtech.archunit.lang.ArchRule;
 import java.io.IOException;
 import java.util.List;
 import li.selman.nullmarkeder.PackageInfoGenerator;
+import org.jmolecules.archunit.JMoleculesArchitectureRules;
+import org.jmolecules.archunit.JMoleculesDddRules;
 import org.jspecify.annotations.NullMarked;
 
 @AnalyzeClasses(packages = "li.selman", importOptions = ImportOption.DoNotIncludeTests.class)
 class ArchitectureTest {
 
     private static final String ROOT_PACKAGE = "li.selman";
+
+    /** Aggregates only reference other aggregates by id/association, never by direct object reference. */
+    @ArchTest
+    static final ArchRule dddRulesAreRespected = JMoleculesDddRules.all();
+
+    /**
+     * Enforces the {@code line}/{@code shared} onion rings declared via {@code @DomainRing}/{@code
+     * @ApplicationRing}/{@code @InfrastructureRing}: dependencies may only point inward
+     * (Infrastructure -> Application -> Domain), never outward.
+     */
+    @ArchTest
+    static final ArchRule onionArchitectureIsRespected = JMoleculesArchitectureRules.ensureOnionSimple();
 
     /** Enforce that all packages contain a `package-info.java` annotated with `@NullMarked`.
      * Run {@link PackageInfoGenerator} to fix. */

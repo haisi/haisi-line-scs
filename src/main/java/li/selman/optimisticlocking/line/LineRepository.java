@@ -3,6 +3,7 @@ package li.selman.optimisticlocking.line;
 import jakarta.persistence.LockModeType;
 import java.util.Collection;
 import java.util.Optional;
+import org.jmolecules.architecture.onion.simplified.DomainRing;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Lock;
@@ -10,6 +11,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
 
+@DomainRing
 public interface LineRepository extends Repository<Line, LineId> {
 
     Line save(Line line);

@@ -2,6 +2,7 @@ package li.selman.optimisticlocking.line;
 
 import ch.admin.bit.jeap.security.resource.semanticAuthentication.ServletSemanticAuthorization;
 import java.util.Set;
+import org.jmolecules.architecture.onion.simplified.ApplicationRing;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
 
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Component;
  * caller currently affiliated with the line's creating business partner (holding any role for
  * that partner) may access it.
  */
+@ApplicationRing
 @Component
 public class LineAuthorization {
 

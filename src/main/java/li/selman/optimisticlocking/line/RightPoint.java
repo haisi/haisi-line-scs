@@ -1,7 +1,9 @@
 package li.selman.optimisticlocking.line;
 
 import jakarta.persistence.*;
+import org.jmolecules.architecture.onion.simplified.DomainRing;
 
+@DomainRing
 @Entity
 public class RightPoint {
 

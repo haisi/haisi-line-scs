@@ -1,5 +1,6 @@
 package li.selman.optimisticlocking.line;
 
+import org.jmolecules.architecture.onion.simplified.DomainRing;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.ResponseStatus;
 
@@ -8,6 +9,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
  * The client stated no precondition (creation carries no If-Match), so this is a
  * genuine 409 Conflict rather than a 412.
  */
+@DomainRing
 @ResponseStatus(HttpStatus.CONFLICT)
 public class LineAlreadyExists extends RuntimeException {
 

@@ -3,9 +3,11 @@ package li.selman.optimisticlocking.line;
 import jakarta.persistence.*;
 import java.time.Instant;
 import li.selman.optimisticlocking.shared.BusinessRuleViolated;
+import org.jmolecules.architecture.onion.simplified.DomainRing;
 import org.jmolecules.ddd.types.AggregateRoot;
 import org.jspecify.annotations.Nullable;
 
+@DomainRing
 @Entity
 public class Line implements AggregateRoot<Line, LineId> {
 
