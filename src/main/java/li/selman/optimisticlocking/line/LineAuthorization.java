@@ -20,13 +20,24 @@ import org.springframework.stereotype.Component;
 @Component
 public class LineAuthorization {
 
+    private static final String SYSTEM = "wvs";
     private static final String RESOURCE = "line";
-    private static final String CREATE = "create";
-    private static final String DELETE = "delete";
 
-    public static final SemanticApplicationRole READ_ROLE = SemanticApplicationRole.builder().system("wvs").resource(RESOURCE).operation("read").build();
-    public static final SemanticApplicationRole DELETE_ROLE = SemanticApplicationRole.builder().system("wvs").resource(RESOURCE).operation("delete").build();
-    public static final SemanticApplicationRole CREATE_ROLE = SemanticApplicationRole.builder().system("wvs").resource(RESOURCE).operation("create").build();
+    public static final SemanticApplicationRole READ_ROLE = SemanticApplicationRole.builder()
+            .system(SYSTEM)
+            .resource(RESOURCE)
+            .operation("read")
+            .build();
+    public static final SemanticApplicationRole DELETE_ROLE = SemanticApplicationRole.builder()
+            .system(SYSTEM)
+            .resource(RESOURCE)
+            .operation("delete")
+            .build();
+    public static final SemanticApplicationRole CREATE_ROLE = SemanticApplicationRole.builder()
+            .system(SYSTEM)
+            .resource(RESOURCE)
+            .operation("create")
+            .build();
 
     private final ServletSemanticAuthorization authorization;
 
@@ -35,23 +46,23 @@ public class LineAuthorization {
     }
 
     public boolean canCreate(String businessPartnerId) {
-        return authorization.hasRoleForPartner(RESOURCE, CREATE, businessPartnerId);
+        return authorization.hasRoleForPartner(CREATE_ROLE, businessPartnerId);
     }
 
     public void requireCanCreate(String businessPartnerId) {
         if (!canCreate(businessPartnerId)) {
             throw new AccessDeniedException(
-                    "Missing role '%s#%s' for business partner %s".formatted(RESOURCE, CREATE, businessPartnerId));
+                    "Missing role '%s' for business partner %s".formatted(CREATE_ROLE, businessPartnerId));
         }
     }
 
     public boolean canDelete() {
-        return authorization.hasRoleForAllPartners(RESOURCE, DELETE);
+        return authorization.hasRoleForAllPartners(DELETE_ROLE);
     }
 
     public void requireCanDelete() {
         if (!canDelete()) {
-            throw new AccessDeniedException("Missing role '%s#%s'".formatted(RESOURCE, DELETE));
+            throw new AccessDeniedException("Missing role '%s'".formatted(DELETE_ROLE));
         }
     }
 
