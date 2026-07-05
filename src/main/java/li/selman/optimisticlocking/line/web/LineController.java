@@ -100,9 +100,10 @@ public class LineController {
     }
 
     @GetMapping
-    @PreAuthorize("hasRoleForPartner(@lineAuthorization.READ_ROLE, #partnerId) || hasRole(@lineAuthorization.READ_ROLE)")
-    ResponseEntity<Page<Line>> getAll(Pageable pageable,
-                                      @RequestHeader(name = "X-Partner-Id", required = false) @Nullable String partnerId) {
+    @PreAuthorize(
+            "hasRoleForPartner(@lineAuthorization.READ_ROLE, #partnerId) || hasRole(@lineAuthorization.READ_ROLE)")
+    ResponseEntity<Page<Line>> getAll(
+            Pageable pageable, @RequestHeader(name = "X-Partner-Id", required = false) @Nullable String partnerId) {
         Set<String> businessPartnerIds = lineAuthorization.currentBusinessPartnerIds();
         Page<Line> lines = businessPartnerIds.isEmpty()
                 ? Page.empty(pageable)

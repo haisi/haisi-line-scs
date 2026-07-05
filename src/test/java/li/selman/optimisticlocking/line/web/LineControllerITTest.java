@@ -17,7 +17,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
-
 import li.selman.optimisticlocking.line.LineAuthorization;
 import li.selman.optimisticlocking.line.LineFixture;
 import li.selman.optimisticlocking.line.LineRepository;
@@ -58,19 +57,11 @@ import org.springframework.test.web.servlet.client.RestTestClient;
 @Import(JeapOAuth2IntegrationTestResourceConfiguration.class)
 class LineControllerITTest {
 
-    private static final SemanticApplicationRole LINE_CREATE = SemanticApplicationRole.builder()
-            .system("wvs")
-            .resource("line")
-            .operation("create")
-            .build();
-    private static final SemanticApplicationRole LINE_DELETE = SemanticApplicationRole.builder()
-            .system("wvs")
-            .resource("line")
-            .operation("delete")
-            .build();
+    // We purposefully do not reference the constant in LineAuthorization class
+    private static final String LINE_READ = "wvs_@line_#READ";
+    private static final String LINE_CREATE = "wvs_@line_#create";
+    private static final String LINE_DELETE = "wvs_@line_#delete";
 
-    //    @Autowired
-    //    TestEntityManager testEntityManager;
 
     @Autowired
     LineRepository lineRepository;
@@ -93,13 +84,17 @@ class LineControllerITTest {
      * own narrower token via {@link #authedAs}. */
     RestTestClient authedClient;
 
+//    private static String BAZG_EMPLYEE_TOKEN =
+
+
     @BeforeEach
     void authenticate() {
         // line_#create for the fixture's partner (business-partner-scoped) plus line_#delete as a
         // regular/internal user (user-independent) -- these are deliberately two different claims.
         authedClient = authedAs(jwsBuilderFactory
                 .createValidFromNowBuilder("test-subject", JeapAuthenticationContext.USER, 5, ChronoUnit.MINUTES)
-                .withBusinessPartnerRoles(LineFixture.BUSINESS_PARTNER_ID, LineAuthorization.CREATE_ROLE, LineAuthorization.READ_ROLE)
+                .withBusinessPartnerRoles(
+                        LineFixture.BUSINESS_PARTNER_ID, LineAuthorization.CREATE_ROLE, LineAuthorization.READ_ROLE)
                 .withBusinessPartnerRoles("Roche", LineAuthorization.DELETE_ROLE)
                 .withUserRoles(LINE_DELETE)
                 .build()
@@ -119,7 +114,7 @@ class LineControllerITTest {
                 .build();
     }
 
-    private String tokenFor(String businessPartnerId, SemanticApplicationRole... businessPartnerRoles) {
+    private String tokenFor(String businessPartnerId, String... businessPartnerRoles) {
         return jwsBuilderFactory
                 .createValidFromNowBuilder("test-subject", JeapAuthenticationContext.USER, 5, ChronoUnit.MINUTES)
                 .withBusinessPartnerRoles(businessPartnerId, businessPartnerRoles)
@@ -127,7 +122,7 @@ class LineControllerITTest {
                 .serialize();
     }
 
-    private String tokenWithUserRoles(SemanticApplicationRole... userRoles) {
+    private String tokenWithUserRoles(String... userRoles) {
         return jwsBuilderFactory
                 .createValidFromNowBuilder("test-subject", JeapAuthenticationContext.USER, 5, ChronoUnit.MINUTES)
                 .withUserRoles(userRoles)
@@ -970,6 +965,23 @@ class LineControllerITTest {
                     .uri("/lines/{id}/left", id)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .body(new MoveRequest(1))
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden();
+        }
+
+        /**
+         * {@code X-Partner-Id} declares which single business partner the caller acts as for this
+         * request -- naming one the caller holds no role for at all is an authorization failure,
+         * caught by {@link li.selman.optimisticlocking.shared.web.BusinessPartnerFilter} before the
+         * request ever reaches the controller.
+         */
+        @Test
+        void getAll_withPartnerIdHeaderForUnaffiliatedPartner_returns403() {
+            authedClient
+                    .get()
+                    .uri("/lines")
+                    .header("X-Partner-Id", OTHER_BUSINESS_PARTNER_ID)
                     .exchange()
                     .expectStatus()
                     .isForbidden();
