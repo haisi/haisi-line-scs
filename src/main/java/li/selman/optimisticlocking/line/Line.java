@@ -18,11 +18,9 @@ public class Line implements AggregateRoot<Line, LineId> {
     private long lockVersion = 1;
 
     @OneToOne(cascade = CascadeType.ALL, orphanRemoval = true)
-    @JoinColumn(name = "left_id")
     private LeftPoint left;
 
     @OneToOne(cascade = CascadeType.ALL, orphanRemoval = true)
-    @JoinColumn(name = "right_id")
     private RightPoint right;
 
     @Column
