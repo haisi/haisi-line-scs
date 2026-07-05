@@ -7,6 +7,7 @@ import ch.admin.bit.jeap.security.resource.semanticAuthentication.SemanticApplic
 import ch.admin.bit.jeap.security.resource.token.JeapAuthenticationContext;
 import ch.admin.bit.jeap.security.test.jws.JwsBuilderFactory;
 import ch.admin.bit.jeap.security.test.resource.configuration.JeapOAuth2IntegrationTestResourceConfiguration;
+
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
@@ -17,6 +18,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
+
 import li.selman.optimisticlocking.line.LineAuthorization;
 import li.selman.optimisticlocking.line.LineFixture;
 import li.selman.optimisticlocking.line.LineRepository;
@@ -49,9 +51,9 @@ import org.springframework.test.web.servlet.client.RestTestClient;
 @SpringBootTest(
         webEnvironment = DEFINED_PORT,
         properties = {
-            "server.port=18089",
-            "jeap.security.oauth2.resourceserver.authorization-server.jwk-set-uri="
-                    + "http://localhost:18089/.well-known/jwks.json"
+                "server.port=18089",
+                "jeap.security.oauth2.resourceserver.authorization-server.jwk-set-uri="
+                + "http://localhost:18089/.well-known/jwks.json"
         })
 @AutoConfigureRestTestClient
 @Import(JeapOAuth2IntegrationTestResourceConfiguration.class)
@@ -78,21 +80,65 @@ class LineControllerITTest {
     @Autowired
     JdbcTemplate jdbcTemplate;
 
-    /** Authenticated as the sole business partner every {@link LineFixture} line belongs to, holding both
+    /**
+     * Authenticated as the sole business partner every {@link LineFixture} line belongs to, holding both
      * roles under test -- so the pre-existing (non-authorization-focused) tests below don't incidentally
      * start testing authorization too. Tests that specifically exercise a role/ownership rule mint their
-     * own narrower token via {@link #authedAs}. */
+     * own narrower token via {@link #authedAs}.
+     */
     RestTestClient authedClient;
 
-//    private static String BAZG_EMPLYEE_TOKEN =
+    public static final String BP_ID_COOP_PRONTO = "coop_pronto";
+    public static final String BP_ID_COOP_JUMBO = "coop_jumbo";
+
+    public static final String BP_ID_MGB_MIGROLINO = "mgb_migrolino";
+    public static final String BP_ID_MGB_DENNER = "mgb_denner";
+
+    /** Can READ and DELETE ALL Lines, but not create them*/
+    private String TOKEN_BAZG_EMPLOYEE;
+
+    /** Is in GP Coop Pronto AND Coop Jumbo. However, Pronto GP is not authorized for line service. */
+    private String TOKEN_COOP_EMPLOYEE;
+
+    /**
+     *  Employee of the Migros Genossenschafts Bund. In GP Migrolino and Denner.
+     *  Both are authorized for line service. However, the user must switch between GPs to view and edit
+     *  the lines of Denner or Migrolino
+     */
+    private String TOKEN_MGB_EMPLOYEE;
+
+    /** Has neither GP nor User Roles */
+    private String TOKEN_EMPTY;
 
 
     @BeforeEach
     void authenticate() {
+        TOKEN_BAZG_EMPLOYEE = jwsBuilderFactory
+                .createValidForFixedLongPeriodBuilder("test-subject", JeapAuthenticationContext.USER)
+                .withUserRoles(LINE_DELETE, LINE_READ).build().serialize();
+
+        TOKEN_COOP_EMPLOYEE = jwsBuilderFactory
+                .createValidForFixedLongPeriodBuilder("test-subject", JeapAuthenticationContext.USER)
+                .withBusinessPartnerRoles(BP_ID_COOP_JUMBO, LineAuthorization.CREATE_ROLE, LineAuthorization.READ_ROLE)
+                .withBusinessPartnerRoles(BP_ID_COOP_PRONTO, "something_@else_#READ")
+                .withUserRoles(LINE_DELETE).build().serialize();
+
+        TOKEN_MGB_EMPLOYEE = jwsBuilderFactory
+                .createValidForFixedLongPeriodBuilder("test-subject", JeapAuthenticationContext.USER)
+                .withBusinessPartnerRoles(BP_ID_MGB_DENNER, LineAuthorization.CREATE_ROLE, LineAuthorization.READ_ROLE)
+                .withBusinessPartnerRoles(BP_ID_MGB_MIGROLINO, LineAuthorization.CREATE_ROLE, LineAuthorization.READ_ROLE)
+                .withUserRoles(LINE_DELETE).build().serialize();
+
+        TOKEN_EMPTY = jwsBuilderFactory
+                .createValidForFixedLongPeriodBuilder("test-subject", JeapAuthenticationContext.USER)
+                .withBusinessPartnerRoles(
+                        LineFixture.BUSINESS_PARTNER_ID, LineAuthorization.CREATE_ROLE, LineAuthorization.READ_ROLE)
+                .build().serialize();
+
         // line_#create for the fixture's partner (business-partner-scoped) plus line_#delete as a
         // regular/internal user (user-independent) -- these are deliberately two different claims.
         authedClient = authedAs(jwsBuilderFactory
-                .createValidFromNowBuilder("test-subject", JeapAuthenticationContext.USER, 5, ChronoUnit.MINUTES)
+                .createValidForFixedLongPeriodBuilder("test-subject", JeapAuthenticationContext.USER)
                 .withBusinessPartnerRoles(
                         LineFixture.BUSINESS_PARTNER_ID, LineAuthorization.CREATE_ROLE, LineAuthorization.READ_ROLE)
                 .withBusinessPartnerRoles("Roche", LineAuthorization.DELETE_ROLE)
@@ -116,7 +162,7 @@ class LineControllerITTest {
 
     private String tokenFor(String businessPartnerId, String... businessPartnerRoles) {
         return jwsBuilderFactory
-                .createValidFromNowBuilder("test-subject", JeapAuthenticationContext.USER, 5, ChronoUnit.MINUTES)
+                .createValidForFixedLongPeriodBuilder("test-subject", JeapAuthenticationContext.USER)
                 .withBusinessPartnerRoles(businessPartnerId, businessPartnerRoles)
                 .build()
                 .serialize();
@@ -124,7 +170,7 @@ class LineControllerITTest {
 
     private String tokenWithUserRoles(String... userRoles) {
         return jwsBuilderFactory
-                .createValidFromNowBuilder("test-subject", JeapAuthenticationContext.USER, 5, ChronoUnit.MINUTES)
+                .createValidForFixedLongPeriodBuilder("test-subject", JeapAuthenticationContext.USER)
                 .withUserRoles(userRoles)
                 .build()
                 .serialize();
@@ -132,7 +178,7 @@ class LineControllerITTest {
 
     private String tokenWithNoRoles() {
         return jwsBuilderFactory
-                .createValidFromNowBuilder("test-subject", JeapAuthenticationContext.USER, 5, ChronoUnit.MINUTES)
+                .createValidForFixedLongPeriodBuilder("test-subject", JeapAuthenticationContext.USER)
                 .build()
                 .serialize();
     }
@@ -877,7 +923,9 @@ class LineControllerITTest {
                     .isEqualTo(0);
         }
 
-        /** Lines belonging to a business partner the caller isn't affiliated with are filtered out. */
+        /**
+         * Lines belonging to a business partner the caller isn't affiliated with are filtered out.
+         */
         @Test
         void excludesLinesOfOtherBusinessPartners() {
             lineRepository.save(LineFixture.newBuilder().randomId().build()); // LineFixture.BUSINESS_PARTNER_ID
@@ -925,7 +973,9 @@ class LineControllerITTest {
                     .isForbidden();
         }
 
-        /** {@code line_#create} held for a different business partner does not authorize creation for this one. */
+        /**
+         * {@code line_#create} held for a different business partner does not authorize creation for this one.
+         */
         @Test
         void create_withCreateRoleForDifferentPartner_returns403() {
             UUID id = UUID.randomUUID();
@@ -939,7 +989,9 @@ class LineControllerITTest {
                     .isForbidden();
         }
 
-        /** Only the creating business partner may view a line, even for another otherwise-valid caller. */
+        /**
+         * Only the creating business partner may view a line, even for another otherwise-valid caller.
+         */
         @Test
         void get_byNonOwningBusinessPartner_returns403() {
             UUID id = UUID.randomUUID();
@@ -953,7 +1005,9 @@ class LineControllerITTest {
                     .isForbidden();
         }
 
-        /** Same ownership rule applies to edits (move), not just reads. */
+        /**
+         * Same ownership rule applies to edits (move), not just reads.
+         */
         @Test
         void move_byNonOwningBusinessPartner_returns403() {
             UUID id = UUID.randomUUID();
