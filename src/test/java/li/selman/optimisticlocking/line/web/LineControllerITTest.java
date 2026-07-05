@@ -60,7 +60,7 @@ import org.springframework.test.web.servlet.client.RestTestClient;
 class LineControllerITTest {
 
     // We purposefully do not reference the constant in LineAuthorization class
-    private static final String LINE_READ = "wvs_@line_#READ";
+    private static final String LINE_READ = "wvs_@line_#read";
     private static final String LINE_CREATE = "wvs_@line_#create";
     private static final String LINE_DELETE = "wvs_@line_#delete";
 
@@ -856,16 +856,17 @@ class LineControllerITTest {
         }
 
         /**
-         * The {@code delete} affordance reflects {@code line_#delete}: this caller only holds
-         * {@code line_#create}, so the link must not be offered even though a delete would
-         * otherwise succeed for any owner.
+         * The {@code delete} affordance reflects {@code line_#delete}: this caller holds
+         * {@code line_#create} and {@code line_#read} (read is needed to view the line at all)
+         * but not {@code line_#delete}, so the link must not be offered even though a delete
+         * would otherwise succeed for any owner.
          */
         @Test
         void withoutDeleteRole_deleteRelationUnavailable() {
             UUID id = UUID.randomUUID();
             lineRepository.save(LineFixture.newBuilder().id(id).build());
 
-            authedAs(tokenFor(LineFixture.BUSINESS_PARTNER_ID, LINE_CREATE))
+            authedAs(tokenFor(LineFixture.BUSINESS_PARTNER_ID, LINE_CREATE, LINE_READ))
                     .get()
                     .uri("/lines/{id}", id)
                     .accept(MediaTypes.HAL_JSON)
@@ -1069,6 +1070,280 @@ class LineControllerITTest {
                     .exchange()
                     .expectStatus()
                     .isNoContent();
+        }
+    }
+
+    /**
+     * Documents the three kinds of caller this app distinguishes, exercised via the tokens minted
+     * in {@link #authenticate()}:
+     * <ul>
+     *   <li>{@code TOKEN_BAZG_EMPLOYEE}: {@code line_#read}/{@code line_#delete} as
+     *       <b>user roles</b> -- user-independent, so they apply across every business partner's
+     *       lines, like an admin. No {@code line_#create} at all, so creation/editing stays out
+     *       of reach regardless of ownership.</li>
+     *   <li>{@code TOKEN_COOP_EMPLOYEE}: affiliated with two business partners (Coop Pronto and
+     *       Coop Jumbo), but only Jumbo carries {@code line} roles -- Pronto's role is for a
+     *       different resource entirely. Being "in" a GP is not sufficient; the role must be for
+     *       the {@code line} resource specifically.</li>
+     *   <li>{@code TOKEN_MGB_EMPLOYEE}: affiliated with two business partners (Denner and
+     *       Migrolino), both fully authorized for {@code line}. A single line's owning partner
+     *       already disambiguates GET/move, so no {@code X-Partner-Id} is needed there; only
+     *       listing ("GetAll") needs it to narrow from "all my partners" to just one.</li>
+     *   <li>{@code TOKEN_EMPTY}: neither a user role nor any business-partner role -- forbidden
+     *       everywhere.</li>
+     * </ul>
+     */
+    @Nested
+    class RolesAndBusinessPartners {
+
+        @Test
+        void bazgEmployee_canReadAnyLine_regardlessOfOwningBusinessPartner() {
+            UUID acmeLine = UUID.randomUUID();
+            UUID otherCorpLine = UUID.randomUUID();
+            lineRepository.save(LineFixture.newBuilder().id(acmeLine).build()); // owned by "acme"
+            lineRepository.save(LineFixture.newBuilder()
+                    .id(otherCorpLine)
+                    .businessPartnerId("other-corp")
+                    .build());
+
+            authedAs(TOKEN_BAZG_EMPLOYEE).get().uri("/lines/{id}", acmeLine).exchange().expectStatus().isOk();
+            authedAs(TOKEN_BAZG_EMPLOYEE)
+                    .get()
+                    .uri("/lines/{id}", otherCorpLine)
+                    .exchange()
+                    .expectStatus()
+                    .isOk();
+        }
+
+        @Test
+        void bazgEmployee_canDeleteAnyLine_regardlessOfOwningBusinessPartner() {
+            UUID id = UUID.randomUUID();
+            lineRepository.save(
+                    LineFixture.newBuilder().id(id).businessPartnerId("other-corp").build());
+
+            authedAs(TOKEN_BAZG_EMPLOYEE)
+                    .delete()
+                    .uri("/lines/{id}", id)
+                    .exchange()
+                    .expectStatus()
+                    .isNoContent();
+        }
+
+        @Test
+        void bazgEmployee_cannotCreate_holdsNoCreateRoleAtAll() {
+            authedAs(TOKEN_BAZG_EMPLOYEE)
+                    .put()
+                    .uri("/lines/{id}", UUID.randomUUID())
+                    .body(new CreateLineRequest(1, 5, LineFixture.BUSINESS_PARTNER_ID))
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden();
+        }
+
+        @Test
+        void bazgEmployee_getAll_seesLinesOfEveryBusinessPartner() {
+            lineRepository.save(LineFixture.newBuilder().randomId().build()); // "acme"
+            lineRepository.save(LineFixture.newBuilder()
+                    .randomId()
+                    .businessPartnerId("other-corp")
+                    .build());
+
+            authedAs(TOKEN_BAZG_EMPLOYEE)
+                    .get()
+                    .uri("/lines")
+                    .exchange()
+                    .expectStatus()
+                    .isOk()
+                    .expectBody()
+                    .jsonPath("$.page.totalElements")
+                    .isEqualTo(2);
+        }
+
+        @Test
+        void coopEmployee_canCreateReadAndMove_forJumbo_theAuthorizedPartner() {
+            UUID id = UUID.randomUUID();
+
+            authedAs(TOKEN_COOP_EMPLOYEE)
+                    .put()
+                    .uri("/lines/{id}", id)
+                    .body(new CreateLineRequest(3, 9, BP_ID_COOP_JUMBO))
+                    .exchange()
+                    .expectStatus()
+                    .isCreated();
+
+            authedAs(TOKEN_COOP_EMPLOYEE).get().uri("/lines/{id}", id).exchange().expectStatus().isOk();
+
+            authedAs(TOKEN_COOP_EMPLOYEE)
+                    .put()
+                    .uri("/lines/{id}/left", id)
+                    .header(HttpHeaders.IF_MATCH, "\"1\"")
+                    .body(new MoveRequest(1))
+                    .exchange()
+                    .expectStatus()
+                    .isOk();
+        }
+
+        @Test
+        void coopEmployee_cannotCreate_forPronto_beingInThatGpIsNotEnough() {
+            authedAs(TOKEN_COOP_EMPLOYEE)
+                    .put()
+                    .uri("/lines/{id}", UUID.randomUUID())
+                    .body(new CreateLineRequest(1, 5, BP_ID_COOP_PRONTO))
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden();
+        }
+
+        @Test
+        void coopEmployee_cannotReadOrMove_prontosLines_beingInThatGpIsNotEnough() {
+            UUID id = UUID.randomUUID();
+            lineRepository.save(LineFixture.newBuilder()
+                    .id(id)
+                    .businessPartnerId(BP_ID_COOP_PRONTO)
+                    .lockVersion(1)
+                    .build());
+
+            authedAs(TOKEN_COOP_EMPLOYEE)
+                    .get()
+                    .uri("/lines/{id}", id)
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden();
+
+            authedAs(TOKEN_COOP_EMPLOYEE)
+                    .put()
+                    .uri("/lines/{id}/left", id)
+                    .header(HttpHeaders.IF_MATCH, "\"1\"")
+                    .body(new MoveRequest(1))
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden();
+        }
+
+        @Test
+        void coopEmployee_getAll_withoutPartnerHeader_seesOnlyJumbosLines_notProntos() {
+            lineRepository.save(
+                    LineFixture.newBuilder().randomId().businessPartnerId(BP_ID_COOP_JUMBO).build());
+            lineRepository.save(
+                    LineFixture.newBuilder().randomId().businessPartnerId(BP_ID_COOP_PRONTO).build());
+
+            authedAs(TOKEN_COOP_EMPLOYEE)
+                    .get()
+                    .uri("/lines")
+                    .exchange()
+                    .expectStatus()
+                    .isOk()
+                    .expectBody()
+                    .jsonPath("$.page.totalElements")
+                    .isEqualTo(1);
+        }
+
+        @Test
+        void mgbEmployee_canCreateReadAndMove_forBothOfItsPartners_noSwitchingNeededForASingleLine() {
+            UUID dennerLine = UUID.randomUUID();
+            UUID migrolinoLine = UUID.randomUUID();
+
+            authedAs(TOKEN_MGB_EMPLOYEE)
+                    .put()
+                    .uri("/lines/{id}", dennerLine)
+                    .body(new CreateLineRequest(1, 5, BP_ID_MGB_DENNER))
+                    .exchange()
+                    .expectStatus()
+                    .isCreated();
+            authedAs(TOKEN_MGB_EMPLOYEE)
+                    .put()
+                    .uri("/lines/{id}", migrolinoLine)
+                    .body(new CreateLineRequest(1, 5, BP_ID_MGB_MIGROLINO))
+                    .exchange()
+                    .expectStatus()
+                    .isCreated();
+
+            // the line's own owning partner disambiguates -- no X-Partner-Id header needed here
+            authedAs(TOKEN_MGB_EMPLOYEE).get().uri("/lines/{id}", dennerLine).exchange().expectStatus().isOk();
+            authedAs(TOKEN_MGB_EMPLOYEE)
+                    .get()
+                    .uri("/lines/{id}", migrolinoLine)
+                    .exchange()
+                    .expectStatus()
+                    .isOk();
+
+            authedAs(TOKEN_MGB_EMPLOYEE)
+                    .put()
+                    .uri("/lines/{id}/left", dennerLine)
+                    .header(HttpHeaders.IF_MATCH, "\"1\"")
+                    .body(new MoveRequest(1))
+                    .exchange()
+                    .expectStatus()
+                    .isOk();
+        }
+
+        /**
+         * Without {@code X-Partner-Id}, listing falls back to the union of every partner the
+         * caller holds {@code line_#read} for -- here both of MGB's partners, but not the
+         * unaffiliated third one.
+         */
+        @Test
+        void mgbEmployee_getAll_withoutPartnerHeader_seesBothPartnersLinesCombined() {
+            lineRepository.save(
+                    LineFixture.newBuilder().randomId().businessPartnerId(BP_ID_MGB_DENNER).build());
+            lineRepository.save(LineFixture.newBuilder()
+                    .randomId()
+                    .businessPartnerId(BP_ID_MGB_MIGROLINO)
+                    .build());
+            lineRepository.save(
+                    LineFixture.newBuilder().randomId().businessPartnerId("other-corp").build());
+
+            authedAs(TOKEN_MGB_EMPLOYEE)
+                    .get()
+                    .uri("/lines")
+                    .exchange()
+                    .expectStatus()
+                    .isOk()
+                    .expectBody()
+                    .jsonPath("$.page.totalElements")
+                    .isEqualTo(2);
+        }
+
+        /**
+         * With {@code X-Partner-Id}, MGB "switches" to a single GP: listing narrows to just that
+         * one partner's lines, exactly like {@code TOKEN_COOP_EMPLOYEE} always has to.
+         */
+        @Test
+        void mgbEmployee_getAll_withPartnerHeader_scopesToJustThatOnePartner() {
+            lineRepository.save(
+                    LineFixture.newBuilder().randomId().businessPartnerId(BP_ID_MGB_DENNER).build());
+            lineRepository.save(LineFixture.newBuilder()
+                    .randomId()
+                    .businessPartnerId(BP_ID_MGB_MIGROLINO)
+                    .build());
+
+            authedAs(TOKEN_MGB_EMPLOYEE)
+                    .get()
+                    .uri("/lines")
+                    .header("X-Partner-Id", BP_ID_MGB_DENNER)
+                    .exchange()
+                    .expectStatus()
+                    .isOk()
+                    .expectBody()
+                    .jsonPath("$.page.totalElements")
+                    .isEqualTo(1);
+        }
+
+        @Test
+        void noRoles_isForbiddenEverywhere() {
+            UUID id = UUID.randomUUID();
+            lineRepository.save(LineFixture.newBuilder().id(id).build());
+
+            authedAs(TOKEN_EMPTY).get().uri("/lines/{id}", id).exchange().expectStatus().isForbidden();
+            authedAs(TOKEN_EMPTY).get().uri("/lines").exchange().expectStatus().isForbidden();
+            authedAs(TOKEN_EMPTY).delete().uri("/lines/{id}", id).exchange().expectStatus().isForbidden();
+            authedAs(TOKEN_EMPTY)
+                    .put()
+                    .uri("/lines/{id}", UUID.randomUUID())
+                    .body(new CreateLineRequest(1, 5, LineFixture.BUSINESS_PARTNER_ID))
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden();
         }
     }
 }

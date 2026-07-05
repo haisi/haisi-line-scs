@@ -66,8 +66,23 @@ public class LineAuthorization {
         }
     }
 
+    /**
+     * True if the caller holds any of the {@code line} roles for this line's owning business
+     * partner -- deliberately not restricted to {@code READ_ROLE}, since holding e.g. only
+     * {@code create} for a partner should still count as "affiliated" with its lines. Being
+     * affiliated with the partner for some *other*, unrelated system/resource does not count:
+     * {@link ch.admin.bit.jeap.security.resource.semanticAuthentication.SemanticRoleRepository}
+     * already scopes every one of these checks down to the {@code line} resource's system, so a
+     * partner where the caller only holds a role from a different system is correctly treated as
+     * not owned. A caller holding one of these roles for *all* partners (the BAZG "admin" case)
+     * also passes here for free, since {@code hasRoleForPartner} itself falls back to {@code
+     * hasRoleForAllPartners}.
+     */
     public boolean isOwner(Line line) {
-        return currentBusinessPartnerIds().contains(line.getBusinessPartnerId());
+        String businessPartnerId = line.getBusinessPartnerId();
+        return authorization.hasRoleForPartner(READ_ROLE, businessPartnerId)
+                || authorization.hasRoleForPartner(CREATE_ROLE, businessPartnerId)
+                || authorization.hasRoleForPartner(DELETE_ROLE, businessPartnerId);
     }
 
     public void requireOwnership(Line line) {
@@ -76,7 +91,13 @@ public class LineAuthorization {
         }
     }
 
-    public Set<String> currentBusinessPartnerIds() {
-        return authorization.getAuthenticationToken().getBusinessPartnerRoles().keySet();
+    /** True for a caller holding {@code READ_ROLE} user-independently, e.g. the BAZG "admin". */
+    public boolean canReadAll() {
+        return authorization.hasRoleForAllPartners(READ_ROLE);
+    }
+
+    /** Every business partner the caller holds {@code READ_ROLE} for -- meaningless if {@link #canReadAll()}. */
+    public Set<String> readableBusinessPartnerIds() {
+        return Set.copyOf(authorization.getPartnersForRole(READ_ROLE));
     }
 }

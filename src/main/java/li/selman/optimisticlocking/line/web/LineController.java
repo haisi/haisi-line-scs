@@ -69,15 +69,25 @@ public class LineController {
 
     /**
      * BusinessPartner can only view their own lines. Users with the <b>user-role</b> can view all lines.
+     *
+     * <p>Without {@code X-Partner-Id}, a business-partner caller sees the union of every partner
+     * they hold {@code READ_ROLE} for -- never partners outside that set, and never a partner they
+     * merely hold some unrelated role for.
      */
     @GetMapping
     @PreAuthorize(
             "hasRoleForPartner(@lineAuthorization.READ_ROLE, #partnerId) || hasRole(@lineAuthorization.READ_ROLE)")
     ResponseEntity<Page<Line>> getAll(
             Pageable pageable, @RequestHeader(name = "X-Partner-Id", required = false) @Nullable String partnerId) {
-        Page<Line> lines = partnerId == null
-                ? lineRepository.findAll(pageable)
-                : lineRepository.findAllByBusinessPartnerIdIn(List.of(partnerId), pageable);
+        Page<Line> lines;
+        if (partnerId != null) {
+            lines = lineRepository.findAllByBusinessPartnerIdIn(List.of(partnerId), pageable);
+        } else if (lineAuthorization.canReadAll()) {
+            // Only possible with the user role instead of bp role
+            lines = lineRepository.findAll(pageable);
+        } else {
+            lines = lineRepository.findAllByBusinessPartnerIdIn(lineAuthorization.readableBusinessPartnerIds(), pageable);
+        }
         return ResponseEntity.ok(lines);
     }
 
