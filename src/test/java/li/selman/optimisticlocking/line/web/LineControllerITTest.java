@@ -115,24 +115,23 @@ class LineControllerITTest {
     void authenticate() {
         TOKEN_BAZG_EMPLOYEE = jwsBuilderFactory
                 .createValidForFixedLongPeriodBuilder("test-subject", JeapAuthenticationContext.USER)
-                .withUserRoles(LINE_DELETE, LINE_READ).build().serialize();
+                .withUserRoles(LINE_DELETE, LINE_READ)
+                .build().serialize();
 
         TOKEN_COOP_EMPLOYEE = jwsBuilderFactory
                 .createValidForFixedLongPeriodBuilder("test-subject", JeapAuthenticationContext.USER)
                 .withBusinessPartnerRoles(BP_ID_COOP_JUMBO, LineAuthorization.CREATE_ROLE, LineAuthorization.READ_ROLE)
                 .withBusinessPartnerRoles(BP_ID_COOP_PRONTO, "something_@else_#READ")
-                .withUserRoles(LINE_DELETE).build().serialize();
+                .build().serialize();
 
         TOKEN_MGB_EMPLOYEE = jwsBuilderFactory
                 .createValidForFixedLongPeriodBuilder("test-subject", JeapAuthenticationContext.USER)
                 .withBusinessPartnerRoles(BP_ID_MGB_DENNER, LineAuthorization.CREATE_ROLE, LineAuthorization.READ_ROLE)
                 .withBusinessPartnerRoles(BP_ID_MGB_MIGROLINO, LineAuthorization.CREATE_ROLE, LineAuthorization.READ_ROLE)
-                .withUserRoles(LINE_DELETE).build().serialize();
+                .build().serialize();
 
         TOKEN_EMPTY = jwsBuilderFactory
                 .createValidForFixedLongPeriodBuilder("test-subject", JeapAuthenticationContext.USER)
-                .withBusinessPartnerRoles(
-                        LineFixture.BUSINESS_PARTNER_ID, LineAuthorization.CREATE_ROLE, LineAuthorization.READ_ROLE)
                 .build().serialize();
 
         // line_#create for the fixture's partner (business-partner-scoped) plus line_#delete as a
