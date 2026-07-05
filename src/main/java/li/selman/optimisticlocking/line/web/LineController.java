@@ -4,7 +4,9 @@ import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.linkTo;
 import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.methodOn;
 
 import jakarta.annotation.Nullable;
-import java.util.Set;
+
+import java.util.List;
+
 import li.selman.optimisticlocking.line.Line;
 import li.selman.optimisticlocking.line.LineAuthorization;
 import li.selman.optimisticlocking.line.LineCommand;
@@ -38,9 +40,18 @@ public class LineController {
         this.lineAuthorization = lineAuthorization;
     }
 
+    /**
+     * BusinessPartner can only view their own lines. Users with the <b>user-role</b> can view all lines.
+     *
+     * @param partnerId one user can be part of multiple business partner. An operation however is done in the context
+     *                  of a single business partner. The user defines which partner to use by passing the X-Partner-Id header.
+     *                  null for AdBAZG.
+     */
     @GetMapping("{id}")
-    @PreAuthorize("hasRole(@lineAuthorization.READ_ROLE)")
-    ResponseEntity<EntityModel<Line>> get(@PathVariable LineId id, IfNoneMatch ifNoneMatch) {
+    @PreAuthorize(
+            "hasRoleForPartner(@lineAuthorization.READ_ROLE, #partnerId) || hasRole(@lineAuthorization.READ_ROLE)")
+    ResponseEntity<EntityModel<Line>> get(@PathVariable LineId id, IfNoneMatch ifNoneMatch,
+                                          @RequestHeader(name = "X-Partner-Id", required = false) @Nullable String partnerId) {
         return lineRepository
                 .findById(id)
                 .map(it -> {
@@ -55,7 +66,23 @@ public class LineController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+
+    /**
+     * BusinessPartner can only view their own lines. Users with the <b>user-role</b> can view all lines.
+     */
+    @GetMapping
+    @PreAuthorize(
+            "hasRoleForPartner(@lineAuthorization.READ_ROLE, #partnerId) || hasRole(@lineAuthorization.READ_ROLE)")
+    ResponseEntity<Page<Line>> getAll(
+            Pageable pageable, @RequestHeader(name = "X-Partner-Id", required = false) @Nullable String partnerId) {
+        Page<Line> lines = partnerId == null
+                ? lineRepository.findAll(pageable)
+                : lineRepository.findAllByBusinessPartnerIdIn(List.of(partnerId), pageable);
+        return ResponseEntity.ok(lines);
+    }
+
     @DeleteMapping("{id}")
+    // Delete is only allowed by user-role, i.e. by AdBAZG, not by BusinessPartner
     @PreAuthorize("hasRole(@lineAuthorization.DELETE_ROLE)")
     ResponseEntity<Void> delete(@PathVariable LineId id, IfMatch ifMatch) {
         lineService.delete(id, ifMatch);
@@ -63,51 +90,44 @@ public class LineController {
     }
 
     @PutMapping("{id}")
-    @PreAuthorize("hasRole(@lineAuthorization.CREATE_ROLE)")
-    ResponseEntity<EntityModel<Line>> create(@PathVariable LineId id, @RequestBody CreateLineRequest body) {
+    @PreAuthorize(
+            "hasRoleForPartner(@lineAuthorization.CREATE_ROLE, #partnerId) || hasRole(@lineAuthorization.CREATE_ROLE)")
+    ResponseEntity<EntityModel<Line>> create(@PathVariable LineId id, @RequestBody CreateLineRequest body, @RequestHeader(name = "X-Partner-Id", required = false) @Nullable String partnerId) {
         LineCreationResult result =
                 lineService.create(new LineCommand.CreateLine(id, body.left(), body.right(), body.businessPartnerId()));
         // RFC 9110 §9.3.4: a 201 response MUST carry Location; a 200 replay needs none, since the
         // client already addressed this exact URI to get here.
         ResponseEntity.BodyBuilder response = result.created()
                 ? ResponseEntity.status(HttpStatus.CREATED)
-                        .location(linkTo(methodOn(LineController.class).get(id, IfNoneMatch.of(null)))
-                                .toUri())
+                .location(linkTo(methodOn(LineController.class).get(id, IfNoneMatch.of(null), null))
+                        .toUri())
                 : ResponseEntity.status(HttpStatus.OK);
         return response.eTag(result.line().getLockVersion()).body(EntityModel.of(result.line()));
     }
 
     @PutMapping("{id}/left")
-    @PreAuthorize("hasRole(@lineAuthorization.CREATE_ROLE)")
+    @PreAuthorize(
+            "hasRoleForPartner(@lineAuthorization.CREATE_ROLE, #partnerId) || hasRole(@lineAuthorization.CREATE_ROLE)")
     ResponseEntity<EntityModel<Line>> moveLeft(
             @PathVariable LineId id,
             IfMatch ifMatch,
             @RequestHeader(name = "Idempotency-Key", required = false) @Nullable String idempotencyKey,
+            @RequestHeader(name = "X-Partner-Id", required = false) @Nullable String partnerId,
             @RequestBody MoveRequest body) {
         Line line = lineService.moveLeft(id, ifMatch, body.by(), idempotencyKey);
         return ResponseEntity.ok().eTag(line.getLockVersion()).body(EntityModel.of(line));
     }
 
     @PutMapping("{id}/right")
-    @PreAuthorize("hasRole(@lineAuthorization.CREATE_ROLE)")
+    @PreAuthorize(
+            "hasRoleForPartner(@lineAuthorization.CREATE_ROLE, #partnerId) || hasRole(@lineAuthorization.CREATE_ROLE)")
     ResponseEntity<EntityModel<Line>> moveRight(
             @PathVariable LineId id,
             IfMatch ifMatch,
             @RequestHeader(name = "Idempotency-Key", required = false) @Nullable String idempotencyKey,
+            @RequestHeader(name = "X-Partner-Id", required = false) @Nullable String partnerId,
             @RequestBody MoveRequest body) {
         Line line = lineService.moveRight(id, ifMatch, body.by(), idempotencyKey);
         return ResponseEntity.ok().eTag(line.getLockVersion()).body(EntityModel.of(line));
-    }
-
-    @GetMapping
-    @PreAuthorize(
-            "hasRoleForPartner(@lineAuthorization.READ_ROLE, #partnerId) || hasRole(@lineAuthorization.READ_ROLE)")
-    ResponseEntity<Page<Line>> getAll(
-            Pageable pageable, @RequestHeader(name = "X-Partner-Id", required = false) @Nullable String partnerId) {
-        Set<String> businessPartnerIds = lineAuthorization.currentBusinessPartnerIds();
-        Page<Line> lines = businessPartnerIds.isEmpty()
-                ? Page.empty(pageable)
-                : lineRepository.findAllByBusinessPartnerIdIn(businessPartnerIds, pageable);
-        return ResponseEntity.ok(lines);
     }
 }
