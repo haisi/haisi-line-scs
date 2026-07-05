@@ -10,6 +10,8 @@ public class LineFixture {
 
     public static final LineId CONSTANT_ID = new LineId(UUID.fromString("019f1ef9-f540-7105-9509-aeb9c2753a8b"));
 
+    public static final String BUSINESS_PARTNER_ID = "acme";
+
     public static LineBuilder newBuilder() {
         return new LineBuilder();
     }
@@ -23,6 +25,7 @@ public class LineFixture {
         private @Nullable Instant updatedAt;
         private int leftUpdates = 0;
         private int rightUpdates = 0;
+        private String businessPartnerId = BUSINESS_PARTNER_ID;
 
         public LineBuilder id(UUID id) {
             this.id = id;
@@ -69,8 +72,13 @@ public class LineFixture {
             return this;
         }
 
+        public LineBuilder businessPartnerId(String businessPartnerId) {
+            this.businessPartnerId = businessPartnerId;
+            return this;
+        }
+
         public Line build() {
-            Line line = new Line(new LineId(id), left, right);
+            Line line = new Line(new LineId(id), left, right, businessPartnerId);
             ReflectionTestUtils.setField(line, "lockVersion", lockVersion);
             ReflectionTestUtils.setField(line, "updatedAt", updatedAt);
             ReflectionTestUtils.setField(

@@ -18,14 +18,18 @@ public class LineService {
 
     private final LineRepository repo;
     private final IdempotencyKeyRepository idempotencyKeyRepository;
+    private final LineAuthorization authorization;
 
-    LineService(LineRepository repo, IdempotencyKeyRepository idempotencyKeyRepository) {
+    LineService(
+            LineRepository repo, IdempotencyKeyRepository idempotencyKeyRepository, LineAuthorization authorization) {
         this.repo = repo;
         this.idempotencyKeyRepository = idempotencyKeyRepository;
+        this.authorization = authorization;
     }
 
     @Transactional
     public void delete(LineId id, IfMatch ifMatch) {
+        authorization.requireCanDelete(); // line_#delete, user-independent: 403 if missing
         Line line = repo.findById(id).orElse(null);
         if (line == null) return; // already gone -> 204
         if (!ifMatch.isAbsent() && !ifMatch.matches(line.getLockVersion())) {
@@ -43,15 +47,16 @@ public class LineService {
      */
     @Transactional
     public LineCreationResult create(LineCommand.CreateLine cmd) {
+        authorization.requireCanCreate(cmd.businessPartnerId()); // line_#create for that partner: 403 if missing
         Optional<Line> existing = repo.findById(cmd.id());
         if (existing.isPresent()) {
             Line line = existing.get();
-            if (line.sameAs(cmd.left(), cmd.right())) {
+            if (line.sameAs(cmd.left(), cmd.right(), cmd.businessPartnerId())) {
                 return new LineCreationResult(line, false); // 200 OK: identical replay
             }
             throw new LineAlreadyExists(cmd.id()); // 409 Conflict
         }
-        Line line = new Line(cmd.id(), cmd.left(), cmd.right());
+        Line line = new Line(cmd.id(), cmd.left(), cmd.right(), cmd.businessPartnerId());
         repo.save(line);
         return new LineCreationResult(line, true); // 201 Created
     }
@@ -67,11 +72,13 @@ public class LineService {
     }
 
     /**
-     * Gate order mirrors the talk's "Order matters" pipeline exactly:
+     * Gate order mirrors the talk's "Order matters" pipeline, with ownership (data authorization)
+     * checked as soon as the line is loaded, before its version is even inspected:
      * 1. Idempotency-Key: a recognised retry short-circuits here, skipping every gate below.
      * 2. Precondition: If-Match is mandatory for a move (428 if absent, 412 if stale).
-     * 3. Business invariants, enforced on the aggregate root (422 on violation).
-     * 4. Version CAS at commit, via the forced-increment read (409 on a lost race).
+     * 3. Ownership: only the business partner that created the line may edit it (403 otherwise).
+     * 4. Business invariants, enforced on the aggregate root (422 on violation).
+     * 5. Version CAS at commit, via the forced-increment read (409 on a lost race).
      * The idempotency record is staged in the same transaction as the mutation, so a lost CAS
      * rolls back both together -- a failed attempt never leaves behind a replay record.
      */
@@ -85,7 +92,9 @@ public class LineService {
                 if (!priorAttempt.get().getFingerprint().equals(fingerprint)) {
                     throw new IdempotencyKeyReused(key); // 422 Unprocessable Content
                 }
-                return repo.findById(id).orElseThrow(() -> new LineNotFound(id.id())); // replay
+                Line replay = repo.findById(id).orElseThrow(() -> new LineNotFound(id.id()));
+                authorization.requireOwnership(replay);
+                return replay;
             }
         }
 
@@ -94,6 +103,7 @@ public class LineService {
         }
 
         Line line = repo.findForUpdate(id).orElseThrow(() -> new LineNotFound(id.id()));
+        authorization.requireOwnership(line); // only the creating business partner may edit
         if (!ifMatch.matches(line.getLockVersion())) {
             throw new StaleStateIdentified(id.id()); // 412 Precondition Failed
         }

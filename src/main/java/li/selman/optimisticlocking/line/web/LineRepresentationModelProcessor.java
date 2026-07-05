@@ -1,6 +1,7 @@
 package li.selman.optimisticlocking.line.web;
 
 import li.selman.optimisticlocking.line.Line;
+import li.selman.optimisticlocking.line.LineAuthorization;
 import li.selman.optimisticlocking.line.LineCommand;
 import li.selman.optimisticlocking.shared.AggregateCommands;
 import org.springframework.hateoas.EntityModel;
@@ -13,11 +14,13 @@ import org.springframework.stereotype.Component;
 class LineRepresentationModelProcessor implements RepresentationModelProcessor<EntityModel<Line>> {
 
     private final EntityLinks entityLinks;
+    private final LineAuthorization lineAuthorization;
     private final AggregateCommands<Line, LineCommand> aggregateCommands =
             new AggregateCommands<>(Line.class, LineCommand.class);
 
-    LineRepresentationModelProcessor(EntityLinks entityLinks) {
+    LineRepresentationModelProcessor(EntityLinks entityLinks, LineAuthorization lineAuthorization) {
         this.entityLinks = entityLinks;
+        this.lineAuthorization = lineAuthorization;
     }
 
     @Override
@@ -35,7 +38,14 @@ class LineRepresentationModelProcessor implements RepresentationModelProcessor<E
     private void addCommandLink(EntityModel<Line> model, Line line, Class<? extends LineCommand> commandType) {
         var rel = aggregateCommands.getRel(commandType);
         model.addIf(
-                line.can(commandType),
+                line.can(commandType) && isAuthorizedFor(commandType),
                 () -> entityLinks.linkFor(Line.class).slash(rel).withRel(rel));
+    }
+
+    private boolean isAuthorizedFor(Class<? extends LineCommand> commandType) {
+        if (commandType == LineCommand.DeleteLine.class) {
+            return lineAuthorization.canDelete();
+        }
+        return true;
     }
 }

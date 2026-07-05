@@ -26,15 +26,19 @@ public class Line implements AggregateRoot<Line, LineId> {
     @Column
     private @Nullable Instant updatedAt;
 
+    @Column(nullable = false)
+    private String businessPartnerId;
+
     protected Line() {
         // Make JPA happy
     }
 
-    Line(LineId id, int left, int right) {
+    Line(LineId id, int left, int right, String businessPartnerId) {
         if (left > right) throw new BusinessRuleViolated("left (%d) would exceed right (%d)".formatted(left, right));
         this.id = id;
         this.left = new LeftPoint(left);
         this.right = new RightPoint(right);
+        this.businessPartnerId = businessPartnerId;
     }
 
     @Override
@@ -54,8 +58,14 @@ public class Line implements AggregateRoot<Line, LineId> {
         return right.getPosition();
     }
 
-    public boolean sameAs(int left, int right) {
-        return this.left.getPosition() == left && this.right.getPosition() == right;
+    public String getBusinessPartnerId() {
+        return businessPartnerId;
+    }
+
+    public boolean sameAs(int left, int right, String businessPartnerId) {
+        return this.left.getPosition() == left
+                && this.right.getPosition() == right
+                && this.businessPartnerId.equals(businessPartnerId);
     }
 
     public void moveLeft(int by) {
@@ -95,7 +105,7 @@ public class Line implements AggregateRoot<Line, LineId> {
         if (commandType == LineCommand.CreateLine.class) {
             return true;
         } else if (commandType == LineCommand.DeleteLine.class) {
-            return true; // TODO only with operation #delete on resource line
+            return true; // no business invariant blocks a delete; line_#delete is enforced in the web layer
         } else if (commandType == LineCommand.MoveLeft.class) {
             return left.getPosition() > 0 && totalUpdates() < MAX_UPDATES;
         } else if (commandType == LineCommand.MoveRight.class) {

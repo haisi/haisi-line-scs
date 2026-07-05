@@ -5,7 +5,7 @@ import org.springframework.hateoas.server.core.Relation;
 
 public sealed interface LineCommand extends Command {
 
-    record CreateLine(LineId id, int left, int right) implements LineCommand {}
+    record CreateLine(LineId id, int left, int right, String businessPartnerId) implements LineCommand {}
 
     record DeleteLine() implements LineCommand {}
 

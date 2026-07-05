@@ -1,6 +1,7 @@
 package li.selman.optimisticlocking.line;
 
 import jakarta.persistence.LockModeType;
+import java.util.Collection;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -18,6 +19,9 @@ public interface LineRepository extends Repository<Line, LineId> {
     void delete(Line line);
 
     Page<Line> findAll(Pageable pageable);
+
+    /** Only lines created by one of the caller's affiliated business partners are visible. */
+    Page<Line> findAllByBusinessPartnerIdIn(Collection<String> businessPartnerIds, Pageable pageable);
 
     /**
      * Loads for a mutation that only touches a child (Left/RightPoint): forces the root's

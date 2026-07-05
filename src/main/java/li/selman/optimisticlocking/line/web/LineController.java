@@ -4,7 +4,9 @@ import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.linkTo;
 import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.methodOn;
 
 import jakarta.annotation.Nullable;
+import java.util.Set;
 import li.selman.optimisticlocking.line.Line;
+import li.selman.optimisticlocking.line.LineAuthorization;
 import li.selman.optimisticlocking.line.LineCommand;
 import li.selman.optimisticlocking.line.LineCreationResult;
 import li.selman.optimisticlocking.line.LineId;
@@ -27,10 +29,12 @@ public class LineController {
 
     private final LineRepository lineRepository;
     private final LineService lineService;
+    private final LineAuthorization lineAuthorization;
 
-    public LineController(LineRepository lineRepository, LineService lineService) {
+    public LineController(LineRepository lineRepository, LineService lineService, LineAuthorization lineAuthorization) {
         this.lineRepository = lineRepository;
         this.lineService = lineService;
+        this.lineAuthorization = lineAuthorization;
     }
 
     @GetMapping("{id}")
@@ -38,6 +42,7 @@ public class LineController {
         return lineRepository
                 .findById(id)
                 .map(it -> {
+                    lineAuthorization.requireOwnership(it); // only the creating business partner may view
                     if (ifNoneMatch.matches(it.getLockVersion())) {
                         return ResponseEntity.status(HttpStatus.NOT_MODIFIED)
                                 .eTag(it.getLockVersion())
@@ -56,7 +61,8 @@ public class LineController {
 
     @PutMapping("{id}")
     ResponseEntity<EntityModel<Line>> create(@PathVariable LineId id, @RequestBody CreateLineRequest body) {
-        LineCreationResult result = lineService.create(new LineCommand.CreateLine(id, body.left(), body.right()));
+        LineCreationResult result =
+                lineService.create(new LineCommand.CreateLine(id, body.left(), body.right(), body.businessPartnerId()));
         // RFC 9110 §9.3.4: a 201 response MUST carry Location; a 200 replay needs none, since the
         // client already addressed this exact URI to get here.
         ResponseEntity.BodyBuilder response = result.created()
@@ -89,6 +95,10 @@ public class LineController {
 
     @GetMapping
     ResponseEntity<Page<Line>> getAll(Pageable pageable) {
-        return ResponseEntity.ok(lineRepository.findAll(pageable));
+        Set<String> businessPartnerIds = lineAuthorization.currentBusinessPartnerIds();
+        Page<Line> lines = businessPartnerIds.isEmpty()
+                ? Page.empty(pageable)
+                : lineRepository.findAllByBusinessPartnerIdIn(businessPartnerIds, pageable);
+        return ResponseEntity.ok(lines);
     }
 }

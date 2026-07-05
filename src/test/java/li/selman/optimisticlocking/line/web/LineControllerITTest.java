@@ -1,8 +1,13 @@
 package li.selman.optimisticlocking.line.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.boot.test.context.SpringBootTest.WebEnvironment.RANDOM_PORT;
+import static org.springframework.boot.test.context.SpringBootTest.WebEnvironment.DEFINED_PORT;
 
+import ch.admin.bit.jeap.security.resource.semanticAuthentication.SemanticApplicationRole;
+import ch.admin.bit.jeap.security.resource.token.JeapAuthenticationContext;
+import ch.admin.bit.jeap.security.test.jws.JwsBuilderFactory;
+import ch.admin.bit.jeap.security.test.resource.configuration.JeapOAuth2IntegrationTestResourceConfiguration;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -16,19 +21,51 @@ import li.selman.optimisticlocking.line.LineFixture;
 import li.selman.optimisticlocking.line.LineRepository;
 import li.selman.optimisticlocking.line.LineService;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureRestTestClient;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.hateoas.MediaTypes;
 import org.springframework.http.HttpHeaders;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.client.RestTestClient;
 
-@SpringBootTest(webEnvironment = RANDOM_PORT)
+/**
+ * Full end-to-end test: goes through the real jeap-spring-boot-security-starter filter chain, so
+ * every request needs a genuine, signed bearer token. {@link JeapOAuth2IntegrationTestResourceConfiguration}
+ * registers a mock JWKS endpoint inside this same app; the {@code jwk-set-uri} override below points the
+ * resource server at it (see src/test/resources/application.properties for the matching issuer).
+ *
+ * <p>Uses a fixed port rather than {@code RANDOM_PORT}: the resource server's {@code JwtDecoder}
+ * (and the {@code jwk-set-uri} it's built from) is bound during regular singleton creation, well
+ * before the embedded web server publishes {@code local.server.port} in {@code finishRefresh()} --
+ * so {@code ${local.server.port}} would never resolve in time. This mirrors the jeap security
+ * starter's own {@code SemanticRoleAuthorizationWebmvcIT}.
+ */
+@SpringBootTest(
+        webEnvironment = DEFINED_PORT,
+        properties = {
+            "server.port=18089",
+            "jeap.security.oauth2.resourceserver.authorization-server.jwk-set-uri="
+                    + "http://localhost:18089/.well-known/jwks.json"
+        })
 @AutoConfigureRestTestClient
+@Import(JeapOAuth2IntegrationTestResourceConfiguration.class)
 class LineControllerITTest {
+
+    private static final SemanticApplicationRole LINE_CREATE = SemanticApplicationRole.builder()
+            .system("optimistic-locking")
+            .resource("line")
+            .operation("create")
+            .build();
+    private static final SemanticApplicationRole LINE_DELETE = SemanticApplicationRole.builder()
+            .system("optimistic-locking")
+            .resource("line")
+            .operation("delete")
+            .build();
 
     //    @Autowired
     //    TestEntityManager testEntityManager;
@@ -43,13 +80,63 @@ class LineControllerITTest {
     RestTestClient client;
 
     @Autowired
+    JwsBuilderFactory jwsBuilderFactory;
+
+    @Autowired
     JdbcTemplate jdbcTemplate;
+
+    /** Authenticated as the sole business partner every {@link LineFixture} line belongs to, holding both
+     * roles under test -- so the pre-existing (non-authorization-focused) tests below don't incidentally
+     * start testing authorization too. Tests that specifically exercise a role/ownership rule mint their
+     * own narrower token via {@link #authedAs}. */
+    RestTestClient authedClient;
+
+    @BeforeEach
+    void authenticate() {
+        // line_#create for the fixture's partner (business-partner-scoped) plus line_#delete as a
+        // regular/internal user (user-independent) -- these are deliberately two different claims.
+        authedClient = authedAs(jwsBuilderFactory
+                .createValidFromNowBuilder("test-subject", JeapAuthenticationContext.USER, 5, ChronoUnit.MINUTES)
+                .withBusinessPartnerRoles(LineFixture.BUSINESS_PARTNER_ID, LINE_CREATE)
+                .withUserRoles(LINE_DELETE)
+                .build()
+                .serialize());
+    }
 
     @AfterEach
     void cleanup() {
         jdbcTemplate.update("DELETE FROM line");
         jdbcTemplate.update("DELETE FROM left_point");
         jdbcTemplate.update("DELETE FROM right_point");
+    }
+
+    private RestTestClient authedAs(String bearerToken) {
+        return client.mutate()
+                .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + bearerToken)
+                .build();
+    }
+
+    private String tokenFor(String businessPartnerId, SemanticApplicationRole... businessPartnerRoles) {
+        return jwsBuilderFactory
+                .createValidFromNowBuilder("test-subject", JeapAuthenticationContext.USER, 5, ChronoUnit.MINUTES)
+                .withBusinessPartnerRoles(businessPartnerId, businessPartnerRoles)
+                .build()
+                .serialize();
+    }
+
+    private String tokenWithUserRoles(SemanticApplicationRole... userRoles) {
+        return jwsBuilderFactory
+                .createValidFromNowBuilder("test-subject", JeapAuthenticationContext.USER, 5, ChronoUnit.MINUTES)
+                .withUserRoles(userRoles)
+                .build()
+                .serialize();
+    }
+
+    private String tokenWithNoRoles() {
+        return jwsBuilderFactory
+                .createValidFromNowBuilder("test-subject", JeapAuthenticationContext.USER, 5, ChronoUnit.MINUTES)
+                .build()
+                .serialize();
     }
 
     @Nested
@@ -68,17 +155,17 @@ class LineControllerITTest {
             // given
             UUID id = LineFixture.CONSTANT_ID.id();
             lineRepository.save(LineFixture.newBuilder().id(id).build());
-            client.get().uri("/lines/{id}", id).exchange().expectStatus().isOk();
+            authedClient.get().uri("/lines/{id}", id).exchange().expectStatus().isOk();
 
             RestTestClient.ResponseSpec exchange1 =
-                    client.delete().uri("/lines/{id}", id).exchange();
+                    authedClient.delete().uri("/lines/{id}", id).exchange();
             RestTestClient.ResponseSpec exchange2 =
-                    client.delete().uri("/lines/{id}", id).exchange();
+                    authedClient.delete().uri("/lines/{id}", id).exchange();
 
             exchange1.expectAll(spec -> spec.expectStatus().isNoContent());
             exchange2.expectAll(spec -> spec.expectStatus().isNoContent());
 
-            client.get().uri("/lines/{id}", id).exchange().expectStatus().isNotFound();
+            authedClient.get().uri("/lines/{id}", id).exchange().expectStatus().isNotFound();
         }
 
         /**
@@ -93,7 +180,8 @@ class LineControllerITTest {
             lineRepository.save(LineFixture.newBuilder().id(id).lockVersion(1).build());
 
             // when: If-Match carries a version that no longer matches the current one
-            client.delete()
+            authedClient
+                    .delete()
                     .uri("/lines/{id}", id)
                     .header(HttpHeaders.IF_MATCH, "\"999\"")
                     .exchange()
@@ -101,7 +189,7 @@ class LineControllerITTest {
                     .isEqualTo(412);
 
             // then: the write never happened
-            client.get().uri("/lines/{id}", id).exchange().expectStatus().isOk();
+            authedClient.get().uri("/lines/{id}", id).exchange().expectStatus().isOk();
         }
 
         /**
@@ -115,14 +203,15 @@ class LineControllerITTest {
             UUID id = UUID.randomUUID();
             lineRepository.save(LineFixture.newBuilder().id(id).lockVersion(1).build());
 
-            client.delete()
+            authedClient
+                    .delete()
                     .uri("/lines/{id}", id)
                     .header(HttpHeaders.IF_MATCH, "*")
                     .exchange()
                     .expectStatus()
                     .isNoContent();
 
-            client.get().uri("/lines/{id}", id).exchange().expectStatus().isNotFound();
+            authedClient.get().uri("/lines/{id}", id).exchange().expectStatus().isNotFound();
         }
     }
 
@@ -144,9 +233,10 @@ class LineControllerITTest {
         void createsANewLine_returns201Created() {
             UUID id = UUID.randomUUID();
 
-            client.put()
+            authedClient
+                    .put()
                     .uri("/lines/{id}", id)
-                    .body(new CreateLineRequest(1, 5))
+                    .body(new CreateLineRequest(1, 5, LineFixture.BUSINESS_PARTNER_ID))
                     .exchange()
                     .expectStatus()
                     .isCreated()
@@ -161,7 +251,7 @@ class LineControllerITTest {
                     .jsonPath("$.right")
                     .isEqualTo(5);
 
-            client.get().uri("/lines/{id}", id).exchange().expectStatus().isOk();
+            authedClient.get().uri("/lines/{id}", id).exchange().expectStatus().isOk();
         }
 
         /**
@@ -173,17 +263,19 @@ class LineControllerITTest {
         void creatingSameLineTwice_isIdempotent() {
             UUID id = UUID.randomUUID();
 
-            client.put()
+            authedClient
+                    .put()
                     .uri("/lines/{id}", id)
-                    .body(new CreateLineRequest(1, 5))
+                    .body(new CreateLineRequest(1, 5, LineFixture.BUSINESS_PARTNER_ID))
                     .exchange()
                     .expectStatus()
                     .isCreated(); //
 
             // retry with identical content -> no-op, not a second line
-            client.put()
+            authedClient
+                    .put()
                     .uri("/lines/{id}", id)
-                    .body(new CreateLineRequest(1, 5))
+                    .body(new CreateLineRequest(1, 5, LineFixture.BUSINESS_PARTNER_ID))
                     .exchange()
                     .expectStatus()
                     .isOk();
@@ -200,22 +292,25 @@ class LineControllerITTest {
         void creatingWithDifferentBodyForExistingId_returns409Conflict() {
             UUID id = UUID.randomUUID();
 
-            client.put()
+            authedClient
+                    .put()
                     .uri("/lines/{id}", id)
-                    .body(new CreateLineRequest(1, 5))
+                    .body(new CreateLineRequest(1, 5, LineFixture.BUSINESS_PARTNER_ID))
                     .exchange()
                     .expectStatus()
                     .isCreated();
 
             // no precondition was stated, and the content genuinely differs -> 409, not 412
-            client.put()
+            authedClient
+                    .put()
                     .uri("/lines/{id}", id)
-                    .body(new CreateLineRequest(2, 6))
+                    .body(new CreateLineRequest(2, 6, LineFixture.BUSINESS_PARTNER_ID))
                     .exchange()
                     .expectStatus()
                     .isEqualTo(409);
 
-            client.get()
+            authedClient
+                    .get()
                     .uri("/lines/{id}", id)
                     .exchange()
                     .expectBody()
@@ -234,9 +329,10 @@ class LineControllerITTest {
         void creatingWithLeftGreaterThanRight_returns422() {
             UUID id = UUID.randomUUID();
 
-            client.put()
+            authedClient
+                    .put()
                     .uri("/lines/{id}", id)
-                    .body(new CreateLineRequest(5, 1))
+                    .body(new CreateLineRequest(5, 1, LineFixture.BUSINESS_PARTNER_ID))
                     .exchange()
                     .expectStatus()
                     .isEqualTo(422);
@@ -258,7 +354,8 @@ class LineControllerITTest {
                     LineFixture.newBuilder().id(id).line(3, 9).lockVersion(1).build());
 
             // even though only the child LeftPoint row changes, the root's version bumps too
-            client.put()
+            authedClient
+                    .put()
                     .uri("/lines/{id}/left", id)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .body(new MoveRequest(2))
@@ -285,7 +382,8 @@ class LineControllerITTest {
             lineRepository.save(
                     LineFixture.newBuilder().id(id).line(3, 9).lockVersion(1).build());
 
-            client.put()
+            authedClient
+                    .put()
                     .uri("/lines/{id}/left", id)
                     .body(new MoveRequest(2))
                     .exchange()
@@ -307,7 +405,8 @@ class LineControllerITTest {
                     LineFixture.newBuilder().id(id).line(3, 9).lockVersion(1).build());
 
             // someone else's move lands first, bumping the version to "2"
-            client.put()
+            authedClient
+                    .put()
                     .uri("/lines/{id}/left", id)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .body(new MoveRequest(1))
@@ -316,7 +415,8 @@ class LineControllerITTest {
                     .isOk();
 
             // a stale tab retries against the version it originally read
-            client.put()
+            authedClient
+                    .put()
                     .uri("/lines/{id}/left", id)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .body(new MoveRequest(1))
@@ -338,7 +438,8 @@ class LineControllerITTest {
                     LineFixture.newBuilder().id(id).line(3, 9).lockVersion(1).build());
 
             // someone else's move lands first, bumping the version to "2"
-            client.put()
+            authedClient
+                    .put()
                     .uri("/lines/{id}/left", id)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .body(new MoveRequest(1))
@@ -347,7 +448,8 @@ class LineControllerITTest {
                     .isOk();
 
             // a client that never read the current version, but still wants "whatever it is now"
-            client.put()
+            authedClient
+                    .put()
                     .uri("/lines/{id}/left", id)
                     .header(HttpHeaders.IF_MATCH, "*")
                     .body(new MoveRequest(1))
@@ -369,7 +471,8 @@ class LineControllerITTest {
             lineRepository.save(
                     LineFixture.newBuilder().id(id).line(8, 9).lockVersion(1).build());
 
-            client.put()
+            authedClient
+                    .put()
                     .uri("/lines/{id}/left", id)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .body(new MoveRequest(2)) // 8 + 2 = 10 > 9
@@ -378,7 +481,7 @@ class LineControllerITTest {
                     .isEqualTo(422);
 
             // the rejected write never touched the aggregate
-            client.get().uri("/lines/{id}", id).exchange().expectHeader().valueEquals(HttpHeaders.ETAG, "\"1\"");
+            authedClient.get().uri("/lines/{id}", id).exchange().expectHeader().valueEquals(HttpHeaders.ETAG, "\"1\"");
         }
 
         /**
@@ -396,7 +499,8 @@ class LineControllerITTest {
                     .leftUpdates(5)
                     .build());
 
-            client.put()
+            authedClient
+                    .put()
                     .uri("/lines/{id}/left", id)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .body(new MoveRequest(1))
@@ -420,7 +524,8 @@ class LineControllerITTest {
                     LineFixture.newBuilder().id(id).line(3, 9).lockVersion(1).build());
             String idempotencyKey = UUID.randomUUID().toString();
 
-            client.put()
+            authedClient
+                    .put()
                     .uri("/lines/{id}/left", id)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .header("Idempotency-Key", idempotencyKey)
@@ -432,7 +537,8 @@ class LineControllerITTest {
                     .valueEquals(HttpHeaders.ETAG, "\"2\"");
 
             // retry: same key, same (now stale) If-Match -- must replay, not re-apply or 412
-            client.put()
+            authedClient
+                    .put()
                     .uri("/lines/{id}/left", id)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .header("Idempotency-Key", idempotencyKey)
@@ -457,7 +563,8 @@ class LineControllerITTest {
                     LineFixture.newBuilder().id(id).line(3, 9).lockVersion(1).build());
             String idempotencyKey = UUID.randomUUID().toString();
 
-            client.put()
+            authedClient
+                    .put()
                     .uri("/lines/{id}/left", id)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .header("Idempotency-Key", idempotencyKey)
@@ -466,7 +573,8 @@ class LineControllerITTest {
                     .expectStatus()
                     .isOk();
 
-            client.put()
+            authedClient
+                    .put()
                     .uri("/lines/{id}/left", id)
                     .header(HttpHeaders.IF_MATCH, "\"2\"")
                     .header("Idempotency-Key", idempotencyKey)
@@ -500,7 +608,8 @@ class LineControllerITTest {
                     racers.add(() -> {
                         barrier.await();
                         AtomicInteger status = new AtomicInteger();
-                        client.put()
+                        authedClient
+                                .put()
                                 .uri("/lines/{id}/left", id)
                                 .header(HttpHeaders.IF_MATCH, "\"1\"")
                                 .body(new MoveRequest(1))
@@ -532,7 +641,8 @@ class LineControllerITTest {
             assertThat(conflicts).isEqualTo(threadCount - 1);
 
             // exactly one of the identical moves took effect
-            client.get()
+            authedClient
+                    .get()
                     .uri("/lines/{id}", id)
                     .exchange()
                     .expectBody()
@@ -560,7 +670,8 @@ class LineControllerITTest {
             lineRepository.save(LineFixture.newBuilder().id(id).lockVersion(1).build());
 
             // when: the client already holds the current version
-            client.get()
+            authedClient
+                    .get()
                     .uri("/lines/{id}", id)
                     .ifNoneMatch("\"1\"")
                     .exchange()
@@ -581,7 +692,8 @@ class LineControllerITTest {
             UUID id = UUID.randomUUID();
             lineRepository.save(LineFixture.newBuilder().id(id).lockVersion(1).build());
 
-            client.get()
+            authedClient
+                    .get()
                     .uri("/lines/{id}", id)
                     .ifNoneMatch("*")
                     .exchange()
@@ -599,7 +711,8 @@ class LineControllerITTest {
             UUID id = UUID.randomUUID();
             lineRepository.save(LineFixture.newBuilder().id(id).lockVersion(1).build());
 
-            client.get()
+            authedClient
+                    .get()
                     .uri("/lines/{id}", id)
                     .ifNoneMatch("\"999\"", "\"1\"")
                     .exchange()
@@ -619,7 +732,8 @@ class LineControllerITTest {
             UUID id = UUID.randomUUID();
             lineRepository.save(LineFixture.newBuilder().id(id).lockVersion(1).build());
 
-            client.get()
+            authedClient
+                    .get()
                     .uri("/lines/{id}", id)
                     .ifNoneMatch("W/\"1\"")
                     .exchange()
@@ -639,7 +753,8 @@ class LineControllerITTest {
             lineRepository.save(LineFixture.newBuilder().id(atZeroId).line(0, 5).build());
 
             // then: the affordance to move it further left is not offered
-            client.get()
+            authedClient
+                    .get()
                     .uri("/lines/{id}", atZeroId)
                     .accept(MediaTypes.HAL_JSON)
                     .exchange()
@@ -655,7 +770,8 @@ class LineControllerITTest {
                     LineFixture.newBuilder().id(awayFromZeroId).line(2, 5).build());
 
             // then: the affordance is offered
-            client.get()
+            authedClient
+                    .get()
                     .uri("/lines/{id}", awayFromZeroId)
                     .accept(MediaTypes.HAL_JSON)
                     .exchange()
@@ -682,7 +798,8 @@ class LineControllerITTest {
                     .rightUpdates(2)
                     .build());
 
-            client.get()
+            authedClient
+                    .get()
                     .uri("/lines/{id}", id)
                     .accept(MediaTypes.HAL_JSON)
                     .exchange()
@@ -692,6 +809,28 @@ class LineControllerITTest {
                     .jsonPath("$._links.move-left")
                     .doesNotExist()
                     .jsonPath("$._links.move-right")
+                    .doesNotExist();
+        }
+
+        /**
+         * The {@code delete} affordance reflects {@code line_#delete}: this caller only holds
+         * {@code line_#create}, so the link must not be offered even though a delete would
+         * otherwise succeed for any owner.
+         */
+        @Test
+        void withoutDeleteRole_deleteRelationUnavailable() {
+            UUID id = UUID.randomUUID();
+            lineRepository.save(LineFixture.newBuilder().id(id).build());
+
+            authedAs(tokenFor(LineFixture.BUSINESS_PARTNER_ID, LINE_CREATE))
+                    .get()
+                    .uri("/lines/{id}", id)
+                    .accept(MediaTypes.HAL_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isOk()
+                    .expectBody()
+                    .jsonPath("$._links.delete")
                     .doesNotExist();
         }
     }
@@ -709,7 +848,8 @@ class LineControllerITTest {
             lineRepository.save(LineFixture.newBuilder().randomId().build());
             lineRepository.save(LineFixture.newBuilder().randomId().build());
 
-            client.get()
+            authedClient
+                    .get()
                     .uri("/lines?size=2")
                     .exchange()
                     .expectStatus()
@@ -725,7 +865,8 @@ class LineControllerITTest {
 
         @Test
         void returnsEmptyPage_whenNoLinesExist() {
-            client.get()
+            authedClient
+                    .get()
                     .uri("/lines")
                     .exchange()
                     .expectStatus()
@@ -735,6 +876,130 @@ class LineControllerITTest {
                     .isEqualTo(0)
                     .jsonPath("$.content.length()")
                     .isEqualTo(0);
+        }
+
+        /** Lines belonging to a business partner the caller isn't affiliated with are filtered out. */
+        @Test
+        void excludesLinesOfOtherBusinessPartners() {
+            lineRepository.save(LineFixture.newBuilder().randomId().build()); // LineFixture.BUSINESS_PARTNER_ID
+            lineRepository.save(LineFixture.newBuilder()
+                    .randomId()
+                    .businessPartnerId("other-corp")
+                    .build());
+
+            authedClient
+                    .get()
+                    .uri("/lines")
+                    .exchange()
+                    .expectStatus()
+                    .isOk()
+                    .expectBody()
+                    .jsonPath("$.page.totalElements")
+                    .isEqualTo(1);
+        }
+    }
+
+    @Nested
+    class Authorization {
+
+        private static final String OTHER_BUSINESS_PARTNER_ID = "other-corp";
+
+        @Test
+        void unauthenticatedRequest_returns401() {
+            client.get()
+                    .uri("/lines/{id}", UUID.randomUUID())
+                    .exchange()
+                    .expectStatus()
+                    .isUnauthorized();
+        }
+
+        @Test
+        void create_withoutAnyRole_returns403() {
+            UUID id = UUID.randomUUID();
+
+            authedAs(tokenWithNoRoles())
+                    .put()
+                    .uri("/lines/{id}", id)
+                    .body(new CreateLineRequest(1, 5, LineFixture.BUSINESS_PARTNER_ID))
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden();
+        }
+
+        /** {@code line_#create} held for a different business partner does not authorize creation for this one. */
+        @Test
+        void create_withCreateRoleForDifferentPartner_returns403() {
+            UUID id = UUID.randomUUID();
+
+            authedAs(tokenFor(OTHER_BUSINESS_PARTNER_ID, LINE_CREATE))
+                    .put()
+                    .uri("/lines/{id}", id)
+                    .body(new CreateLineRequest(1, 5, LineFixture.BUSINESS_PARTNER_ID))
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden();
+        }
+
+        /** Only the creating business partner may view a line, even for another otherwise-valid caller. */
+        @Test
+        void get_byNonOwningBusinessPartner_returns403() {
+            UUID id = UUID.randomUUID();
+            lineRepository.save(LineFixture.newBuilder().id(id).build()); // owned by LineFixture.BUSINESS_PARTNER_ID
+
+            authedAs(tokenFor(OTHER_BUSINESS_PARTNER_ID, LINE_CREATE))
+                    .get()
+                    .uri("/lines/{id}", id)
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden();
+        }
+
+        /** Same ownership rule applies to edits (move), not just reads. */
+        @Test
+        void move_byNonOwningBusinessPartner_returns403() {
+            UUID id = UUID.randomUUID();
+            lineRepository.save(
+                    LineFixture.newBuilder().id(id).line(3, 9).lockVersion(1).build());
+
+            authedAs(tokenFor(OTHER_BUSINESS_PARTNER_ID, LINE_CREATE))
+                    .put()
+                    .uri("/lines/{id}/left", id)
+                    .header(HttpHeaders.IF_MATCH, "\"1\"")
+                    .body(new MoveRequest(1))
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden();
+        }
+
+        @Test
+        void delete_withoutDeleteRole_returns403() {
+            UUID id = UUID.randomUUID();
+            lineRepository.save(LineFixture.newBuilder().id(id).build());
+
+            authedAs(tokenFor(LineFixture.BUSINESS_PARTNER_ID, LINE_CREATE))
+                    .delete()
+                    .uri("/lines/{id}", id)
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden();
+        }
+
+        /**
+         * Delete is gated purely by the user-independent {@code line_#delete} role -- unlike
+         * view/edit, it does not additionally require the caller to be affiliated with the line's
+         * owning business partner.
+         */
+        @Test
+        void delete_withDeleteRole_succeedsRegardlessOfOwnership() {
+            UUID id = UUID.randomUUID();
+            lineRepository.save(LineFixture.newBuilder().id(id).build()); // owned by LineFixture.BUSINESS_PARTNER_ID
+
+            authedAs(tokenWithUserRoles(LINE_DELETE))
+                    .delete()
+                    .uri("/lines/{id}", id)
+                    .exchange()
+                    .expectStatus()
+                    .isNoContent();
         }
     }
 }
