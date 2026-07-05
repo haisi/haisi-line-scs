@@ -14,11 +14,19 @@
     <name>optimistic-locking</name>
     <description>optimistic-locking</description>
     <properties>
+        <asciidoctor-maven-plugin.version>3.0.0</asciidoctor-maven-plugin.version>
+        <asciidoctorj-diagram.version>2.3.0</asciidoctorj-diagram.version>
         <error-prone-core.version>2.50.0</error-prone-core.version>
         <!-- Properties using which additional Error Prone flags can be specified. -->
         <error-prone.patch-args/>
+        <generated-docs.directory>${project.build.directory}/generated-docs</generated-docs.directory>
+        <generated-snippets.directory>${project.build.directory}/generated-snippets</generated-snippets.directory>
         <java.version>25</java.version>
+        <modulith-docs.directory>${project.build.directory}/spring-modulith-docs</modulith-docs.directory>
         <nullaway.version>0.13.7</nullaway.version>
+        <!-- Build-time-only Asciidoctor extension; not yet released to track spring-restdocs-core's
+        (Boot-managed) 4.0.1, so pinned independently. -->
+        <spring-restdocs-asciidoctor.version>3.0.1</spring-restdocs-asciidoctor.version>
     </properties>
     <dependencyManagement>
         <dependencies>
@@ -362,6 +370,86 @@
                         </path>
                     </annotationProcessorPaths>
                 </configuration>
+            </plugin>
+
+            <plugin>
+                <!--
+                Renders src/docs/asciidoc/index.adoc (the API guide, stitched together from Spring
+                REST Docs snippets under generated-snippets.directory and the Spring Modulith
+                component/module docs under modulith-docs.directory, see ModularityTests) into
+                HTML under generated-docs.directory. Bound to prepare-package so it runs after
+                `test`, once both snippet sources exist.
+                -->
+                <groupId>org.asciidoctor</groupId>
+                <artifactId>asciidoctor-maven-plugin</artifactId>
+                <version>${asciidoctor-maven-plugin.version}</version>
+                <configuration>
+                    <sourceDirectory>src/docs/asciidoc</sourceDirectory>
+                    <outputDirectory>${generated-docs.directory}</outputDirectory>
+                    <requires>
+                        <require>asciidoctor-diagram</require>
+                    </requires>
+                    <attributes>
+                        <snippets>${generated-snippets.directory}</snippets>
+                        <modulith-docs>${modulith-docs.directory}</modulith-docs>
+                        <source-highlighter>coderay</source-highlighter>
+                        <toc>left</toc>
+                        <toclevels>3</toclevels>
+                        <sectnums>true</sectnums>
+                    </attributes>
+                </configuration>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.asciidoctor</groupId>
+                        <artifactId>asciidoctorj-diagram</artifactId>
+                        <version>${asciidoctorj-diagram.version}</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>org.springframework.restdocs</groupId>
+                        <artifactId>spring-restdocs-asciidoctor</artifactId>
+                        <version>${spring-restdocs-asciidoctor.version}</version>
+                    </dependency>
+                </dependencies>
+                <executions>
+                    <execution>
+                        <id>generate-api-docs</id>
+                        <goals>
+                            <goal>process-asciidoc</goal>
+                        </goals>
+                        <phase>prepare-package</phase>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <!-- Publishes the rendered API guide as a static resource so it's servable at
+                /docs/index.html from the running app, next to the jar it documents. Must run at
+                prepare-package, strictly before maven-jar-plugin's package-phase jar:jar, so the
+                copied files are still part of target/classes when the jar is built; declared
+                after the asciidoctor-maven-plugin above so, within the same phase, this execution
+                runs second (Maven executes same-phase plugin executions in declaration order). -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-api-docs-to-static</id>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <phase>prepare-package</phase>
+                        <configuration>
+                            <outputDirectory>${project.build.outputDirectory}/static/docs</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>${generated-docs.directory}</directory>
+                                    <excludes>
+                                        <exclude>.asciidoctor/**</exclude>
+                                    </excludes>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
