@@ -141,10 +141,10 @@ header, results are filtered to that one partner; without it, only a business-pa
 caller can even reach that branch (every business-partner caller was already denied by
 `@PreAuthorize`), and what they see is every partner's lines, unfiltered.
 
-NOTE: The choice of a header (over, say, encoding the partner in the URL path) is recorded in
-https://github.com/haisi/haisi-line-scs/blob/main/docs/adr/0001-x-partner-id-header-for-business-partner-scoping.md[ADR
-0001: X-Partner-Id header for business-partner scoping] -- `BusinessPartnerFilter` and every
-`LineController` method above are annotated `@ADR(1)`, linking straight back to it.
+`BusinessPartnerFilter` and every `LineController` method above are annotated `@ADR(1)`, linking
+straight back to the ADR embedded below, which records why a header was chosen over the alternatives.
+
+include::../../../docs/adr/0001-x-partner-id-header-for-business-partner-scoping.adoc[leveloffset=+2]
 
 === Creating a line
 
