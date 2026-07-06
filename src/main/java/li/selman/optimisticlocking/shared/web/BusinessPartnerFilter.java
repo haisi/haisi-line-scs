@@ -1,6 +1,7 @@
 package li.selman.optimisticlocking.shared.web;
 
 import ch.admin.bit.jeap.security.resource.semanticAuthentication.ServletSemanticAuthorization;
+import io.github.adr.linked.ADR;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -18,6 +19,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * so {@code getAuthenticationToken()} is only ever reached for an already-fully-authenticated request.
  */
 @Component
+@ADR(1)
 public class BusinessPartnerFilter extends OncePerRequestFilter {
 
     public static final String PARTNER_ID_HEADER = "X-Partner-Id";

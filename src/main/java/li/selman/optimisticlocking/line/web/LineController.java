@@ -3,6 +3,7 @@ package li.selman.optimisticlocking.line.web;
 import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.linkTo;
 import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.methodOn;
 
+import io.github.adr.linked.ADR;
 import jakarta.annotation.Nullable;
 
 import java.util.List;
@@ -49,6 +50,7 @@ public class LineController {
      */
     @GetMapping("{id}")
     @PreAuthorize("hasRoleForPartner(@lineAuthorization.READ_ROLE, #partnerId)")
+    @ADR(1)
     ResponseEntity<EntityModel<Line>> get(@PathVariable LineId id, IfNoneMatch ifNoneMatch,
                                           @RequestHeader(name = "X-Partner-Id", required = false) @Nullable String partnerId) {
         return lineRepository
@@ -76,6 +78,7 @@ public class LineController {
      */
     @GetMapping
     @PreAuthorize("hasRoleForPartner(@lineAuthorization.READ_ROLE, #partnerId)")
+    @ADR(1)
     ResponseEntity<Page<Line>> getAll(
             Pageable pageable, @RequestHeader(name = "X-Partner-Id", required = false) @Nullable String partnerId) {
         // partnerId == null only ever reaches here for a caller holding READ_ROLE user-independently
@@ -96,6 +99,7 @@ public class LineController {
 
     @PutMapping("{id}")
     @PreAuthorize("hasRoleForPartner(@lineAuthorization.CREATE_ROLE, #partnerId)")
+    @ADR(1)
     ResponseEntity<EntityModel<Line>> create(@PathVariable LineId id, @RequestBody CreateLineRequest body, @RequestHeader(name = "X-Partner-Id", required = false) @Nullable String partnerId) {
         LineCreationResult result =
                 lineService.create(new LineCommand.CreateLine(id, body.left(), body.right(), body.businessPartnerId()));
@@ -111,6 +115,7 @@ public class LineController {
 
     @PutMapping("{id}/left")
     @PreAuthorize("hasRoleForPartner(@lineAuthorization.CREATE_ROLE, #partnerId)")
+    @ADR(1)
     ResponseEntity<EntityModel<Line>> moveLeft(
             @PathVariable LineId id,
             IfMatch ifMatch,
@@ -123,6 +128,7 @@ public class LineController {
 
     @PutMapping("{id}/right")
     @PreAuthorize("hasRoleForPartner(@lineAuthorization.CREATE_ROLE, #partnerId)")
+    @ADR(1)
     ResponseEntity<EntityModel<Line>> moveRight(
             @PathVariable LineId id,
             IfMatch ifMatch,

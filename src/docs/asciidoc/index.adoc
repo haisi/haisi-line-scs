@@ -37,6 +37,7 @@ behaviour ever disagree, the build fails before either does.
 * Source code: https://github.com/haisi/haisi-line-scs
 * Test report: link:tests/index.html[]
 * Test coverage: link:coverage/index.html[]
+* Architecture Decision Records: https://github.com/haisi/haisi-line-scs/tree/main/docs/adr[docs/adr/]
 
 == Architecture
 
@@ -139,6 +140,11 @@ one partner's data to a caller who never named it. `GET /lines` makes this concr
 header, results are filtered to that one partner; without it, only a business-partner-independent
 caller can even reach that branch (every business-partner caller was already denied by
 `@PreAuthorize`), and what they see is every partner's lines, unfiltered.
+
+NOTE: The choice of a header (over, say, encoding the partner in the URL path) is recorded in
+https://github.com/haisi/haisi-line-scs/blob/main/docs/adr/0001-x-partner-id-header-for-business-partner-scoping.md[ADR
+0001: X-Partner-Id header for business-partner scoping] -- `BusinessPartnerFilter` and every
+`LineController` method above are annotated `@ADR(1)`, linking straight back to it.
 
 === Creating a line
 
