@@ -23,7 +23,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import ch.admin.bit.jeap.security.resource.token.JeapAuthenticationContext;
 import ch.admin.bit.jeap.security.test.jws.JwsBuilderFactory;
 import ch.admin.bit.jeap.security.test.resource.configuration.JeapOAuth2IntegrationTestResourceConfiguration;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import java.util.UUID;
 import li.selman.optimisticlocking.line.LineAuthorization;
 import li.selman.optimisticlocking.line.LineFixture;
@@ -81,7 +81,7 @@ class LineApiDocumentationTest {
     @Autowired
     JdbcTemplate jdbcTemplate;
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final JsonMapper objectMapper = JsonMapper.builder().build();
 
     MockMvc mockMvc;
 
@@ -145,7 +145,7 @@ class LineApiDocumentationTest {
                                         headerWithName(HttpHeaders.LOCATION)
                                                 .description("URI of the newly created line.")),
                                 relaxedResponseFields(
-                                        fieldWithPath("id.id")
+                                        fieldWithPath("id")
                                                 .description("The line's id (echoes the path parameter)."),
                                         fieldWithPath("left").description("Current position of the left point."),
                                         fieldWithPath("right").description("Current position of the right point."),
@@ -220,7 +220,7 @@ class LineApiDocumentationTest {
                                         .description(
                                                 "Current aggregate version, quoted; reflect it back as `If-Match` to edit or delete.")),
                         relaxedResponseFields(
-                                fieldWithPath("id.id").description("The line's id."),
+                                fieldWithPath("id").description("The line's id."),
                                 fieldWithPath("left").description("Current position of the left point."),
                                 fieldWithPath("right").description("Current position of the right point."),
                                 fieldWithPath("businessPartnerId").description("Owning business partner.")),
