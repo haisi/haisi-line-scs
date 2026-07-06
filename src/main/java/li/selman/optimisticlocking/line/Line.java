@@ -1,5 +1,6 @@
 package li.selman.optimisticlocking.line;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import java.time.Instant;
 import li.selman.optimisticlocking.shared.BusinessRuleViolated;
@@ -48,6 +49,8 @@ public class Line implements AggregateRoot<Line, LineId> {
         return id;
     }
 
+    // Already surfaced via the ETag header (see LineController); not duplicated in the body.
+    @JsonIgnore
     public String getLockVersion() {
         return "\"" + lockVersion + "\"";
     }

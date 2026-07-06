@@ -149,10 +149,7 @@ class LineApiDocumentationTest {
                                                 .description("The line's id (echoes the path parameter)."),
                                         fieldWithPath("left").description("Current position of the left point."),
                                         fieldWithPath("right").description("Current position of the right point."),
-                                        fieldWithPath("businessPartnerId").description("Owning business partner."),
-                                        fieldWithPath("lockVersion")
-                                                .description(
-                                                        "Current aggregate version, quoted -- identical to the `ETag` header."))));
+                                        fieldWithPath("businessPartnerId").description("Owning business partner."))));
     }
 
     @Test
