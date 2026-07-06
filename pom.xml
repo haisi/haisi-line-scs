@@ -374,6 +374,56 @@
 
             <plugin>
                 <!--
+                jeap-spring-boot-parent already manages this plugin and registers its "agent"
+                execution (prepare-agent/prepare-agent-integration, bound to their default phases),
+                so simply activating the plugin here is enough to instrument test runs. The "report"
+                execution added below renders the resulting coverage data as HTML directly into
+                generated-docs.directory, so it's published and copied to static/docs alongside the
+                API guide with no separate copy step. Bound to prepare-package, after `test` has
+                already written the coverage data.
+                -->
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>report</id>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                        <phase>prepare-package</phase>
+                        <configuration>
+                            <outputDirectory>${generated-docs.directory}/coverage</outputDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <!--
+                Renders the surefire-reports XML (already written by the `test` phase) as a
+                browsable HTML test report, directly into generated-docs.directory for the same
+                reason as jacoco-maven-plugin above.
+                -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-report-plugin</artifactId>
+                <version>${maven-surefire-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>generate-test-report</id>
+                        <goals>
+                            <goal>report-only</goal>
+                        </goals>
+                        <phase>prepare-package</phase>
+                        <configuration>
+                            <outputDirectory>${generated-docs.directory}/tests</outputDirectory>
+                            <outputName>index</outputName>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <!--
                 Renders src/docs/asciidoc/index.adoc (the API guide, stitched together from Spring
                 REST Docs snippets under generated-snippets.directory and the Spring Modulith
                 component/module docs under modulith-docs.directory, see ModularityTests) into

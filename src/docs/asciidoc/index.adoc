@@ -34,6 +34,10 @@ application, and every HTTP request/response pair comes from a passing
 https://spring.io/projects/spring-restdocs[Spring REST Docs] test -- if the documentation and the
 behaviour ever disagree, the build fails before either does.
 
+* Source code: https://github.com/haisi/haisi-line-scs
+* Test report: link:tests/index.html[]
+* Test coverage: link:coverage/index.html[]
+
 == Architecture
 
 The application is organised as two Spring Modulith application modules. `line` is the one bounded
