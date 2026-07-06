@@ -26,6 +26,9 @@ jobs:
           java-version: '25'
           cache: maven
 
+      - name: Install Graphviz (dot executable required by PlantUML diagrams)
+        run: sudo apt-get update && sudo apt-get install -y graphviz
+
       - name: Build (tests, REST Docs snippets, Modulith docs, Asciidoctor)
         run: ./mvnw --batch-mode --no-transfer-progress package
 
