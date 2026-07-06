@@ -132,6 +132,9 @@ class LineApiDocumentationTest {
                                 "create-line",
                                 pathParameters(
                                         parameterWithName("id").description("Client-chosen id of the line to create.")),
+                                requestHeaders(headerWithName("X-Partner-Id")
+                                        .description("Business partner context this request acts in -- see "
+                                                + "<<business-partner-scoping>>.")),
                                 relaxedRequestFields(
                                         fieldWithPath("left").description("Initial position of the left point."),
                                         fieldWithPath("right")
@@ -212,6 +215,9 @@ class LineApiDocumentationTest {
                 .andDo(document(
                         "get-line",
                         pathParameters(parameterWithName("id").description("Id of the line.")),
+                        requestHeaders(headerWithName("X-Partner-Id")
+                                .description("Business partner context this request acts in -- see "
+                                        + "<<business-partner-scoping>>.")),
                         responseHeaders(
                                 headerWithName(HttpHeaders.ETAG)
                                         .description(
@@ -263,8 +269,12 @@ class LineApiDocumentationTest {
                 .andDo(document(
                         "move-left",
                         pathParameters(parameterWithName("id").description("Id of the line.")),
-                        requestHeaders(headerWithName(HttpHeaders.IF_MATCH)
-                                .description("Mandatory precondition: the version this write is conditional on.")),
+                        requestHeaders(
+                                headerWithName(HttpHeaders.IF_MATCH)
+                                        .description("Mandatory precondition: the version this write is conditional on."),
+                                headerWithName("X-Partner-Id")
+                                        .description("Business partner context this request acts in -- see "
+                                                + "<<business-partner-scoping>>.")),
                         relaxedRequestFields(
                                 fieldWithPath("by").description("Signed offset to add to the left point's position.")),
                         responseHeaders(headerWithName(HttpHeaders.ETAG)

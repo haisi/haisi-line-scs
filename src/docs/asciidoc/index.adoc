@@ -105,12 +105,43 @@ corresponding `move-left`/`move-right` relation simply stops being offered.
 
 == HTTP API
 
+[[business-partner-scoping]]
+=== Business-partner scoping
+
+Every request below carries an `X-Partner-Id` header. This app is multi-tenant at the *token*
+level, not the *request* level: a single bearer token can hold semantic roles for several business
+partners at once (`line_#create@acme`, `line_#read@other-partner`, ...), so a request has to state
+which one of those partners it's acting as -- `X-Partner-Id` is that statement, checked twice before
+any domain logic runs:
+
+. `BusinessPartnerFilter` rejects the request outright (`403`) if the named partner is one the
+  caller holds *no* role for at all -- this runs for every request, regardless of which operation is
+  being called.
+. The endpoint's own `@PreAuthorize("hasRoleForPartner(...))` then checks for the *specific* role
+  that operation needs (`line_#create`, `line_#read`, ...) against that same partner -- so being
+  affiliated with a partner isn't enough if the caller only has, say, the read role and is
+  attempting a create.
+
+A `GET` additionally re-checks ownership against the line's own stored `businessPartnerId` once
+it's loaded (`LineAuthorization.requireOwnership`), independent of the header -- so naming a partner
+you're genuinely affiliated with doesn't let you read a *different* partner's line by id.
+
+Omitting the header entirely is only valid for a caller whose role is business-partner-*independent*
+(`hasRoleForAllPartners`) -- deleting a line, for instance, requires a user-role rather than a
+business-partner role, and `DELETE /lines/{id}` doesn't accept the header at all. For every
+business-partner-scoped operation, a missing header simply leaves `hasRoleForPartner` nothing to
+check the role against, so it's denied by default -- there's no fallback that would otherwise leak
+one partner's data to a caller who never named it. `GET /lines` makes this concrete: with the
+header, results are filtered to that one partner; without it, only a business-partner-independent
+caller can even reach that branch (every business-partner caller was already denied by
+`@PreAuthorize`), and what they see is every partner's lines, unfiltered.
+
 === Creating a line
 
 `PUT /lines/{id}` is a client-generated-id create: the caller picks the `id`, so a byte-for-byte
 identical retry is naturally idempotent (RFC 9110 §9.2.2) -- no `Idempotency-Key` needed here.
 
-operation::create-line[snippets='http-request,path-parameters,request-fields,http-response,response-headers,response-fields']
+operation::create-line[snippets='http-request,path-parameters,request-headers,request-fields,http-response,response-headers,response-fields']
 
 Retrying with the exact same body is a no-op replay of the existing resource (`200`, not a second
 `201`):
@@ -126,7 +157,7 @@ operation::create-line-conflict[snippets='http-request,http-response']
 [[reading-a-line]]
 === Reading a line
 
-operation::get-line[snippets='http-request,response-headers,response-fields,links']
+operation::get-line[snippets='http-request,request-headers,response-headers,response-fields,links']
 
 The `move-left`/`move-right` links are present only while the corresponding move would currently
 succeed -- they disappear exactly when the invariants in the previous section would otherwise
