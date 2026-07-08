@@ -788,6 +788,38 @@ class LineControllerITTest {
                     .jsonPath("$.status")
                     .isEqualTo(400);
         }
+
+        /**
+         * Bean Validation ({@code @NotBlank} on {@link CreateLineRequest#businessPartnerId}) is
+         * enforced before the request ever reaches {@code LineService} -- {@code @Valid} on the
+         * controller parameter rejects it with a {@link
+         * org.springframework.web.bind.MethodArgumentNotValidException}, which {@link
+         * ApiExceptionHandler} enriches with an {@code errors} array so the client learns exactly
+         * which field failed and why, rather than just the generic "Invalid request content."
+         */
+        @Test
+        void beanValidation_blankBusinessPartnerId_returns400WithFieldErrors() {
+            UUID id = UUID.randomUUID();
+
+            authedClient
+                    .put()
+                    .uri("/lines/{id}", id)
+                    .body(new CreateLineRequest(1, 5, " "))
+                    .exchange()
+                    .expectStatus()
+                    .isEqualTo(400)
+                    .expectHeader()
+                    .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                    .expectBody()
+                    .jsonPath("$.status")
+                    .isEqualTo(400)
+                    .jsonPath("$.errors[0].field")
+                    .isEqualTo("businessPartnerId")
+                    .jsonPath("$.errors[0].message")
+                    .isEqualTo("must not be blank");
+
+            authedClient.get().uri("/lines/{id}", id).exchange().expectStatus().isNotFound();
+        }
     }
 
     @Nested

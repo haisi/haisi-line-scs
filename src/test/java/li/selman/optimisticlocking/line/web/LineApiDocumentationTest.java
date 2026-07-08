@@ -202,6 +202,41 @@ class LineApiDocumentationTest {
                 .andDo(document("create-line-conflict"));
     }
 
+    /**
+     * {@code @Valid} on the controller parameter rejects a blank {@code businessPartnerId} before
+     * a create ever reaches {@code LineService} -- see <<error-responses>> for how {@link
+     * li.selman.optimisticlocking.line.web.ApiExceptionHandler} enriches the response with an
+     * {@code errors} array beyond Spring's own generic ProblemDetail for this case.
+     */
+    @Test
+    void createLine_blankBusinessPartnerIdFailsValidation() throws Exception {
+        UUID id = UUID.randomUUID();
+
+        mockMvc.perform(put("/lines/{id}", id)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearerToken)
+                        .header("X-Partner-Id", LineFixture.BUSINESS_PARTNER_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateLineRequest(1, 5, " "))))
+                .andExpect(status().isBadRequest())
+                .andDo(document(
+                        "create-line-validation-failed",
+                        relaxedResponseFields(
+                                fieldWithPath("status").description("The HTTP status code, repeated in the body per RFC 9457."),
+                                fieldWithPath("title")
+                                        .description(
+                                                "Short, human-readable summary of the problem -- the HTTP status's reason phrase."),
+                                fieldWithPath("detail")
+                                        .description(
+                                                "Spring's own generic Bean Validation message -- deliberately unspecific, since it never names which field failed."),
+                                fieldWithPath("instance").description("The request path that produced this problem."),
+                                fieldWithPath("errors")
+                                        .description(
+                                                "Extension property added by ApiExceptionHandler: one entry per failed constraint."),
+                                fieldWithPath("errors[].field").description("Name of the request field that failed validation."),
+                                fieldWithPath("errors[].message")
+                                        .description("The Bean Validation constraint's message, e.g. `@NotBlank`'s default."))));
+    }
+
     @Test
     void getLine() throws Exception {
         UUID id = UUID.randomUUID();

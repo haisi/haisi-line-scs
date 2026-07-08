@@ -1,12 +1,17 @@
 package li.selman.optimisticlocking.line.web;
 
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
-import org.jspecify.annotations.Nullable;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.ErrorResponseException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
@@ -37,5 +42,24 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         ProblemDetail body = ProblemDetail.forStatusAndDetail(
                 HttpStatus.CONFLICT, "The line was modified concurrently. Re-read and retry.");
         return handleExceptionInternal(ex, body, new HttpHeaders(), HttpStatus.CONFLICT, request);
+    }
+
+    /**
+     * The inherited handling of a {@code @Valid}-rejected request body carries a deliberately
+     * generic {@code detail} ("Invalid request content.") -- correct per RFC 9457, but useless to
+     * a client that needs to know *which* field failed and why. This adds an {@code errors} array
+     * (one {@code field}/{@code message} pair per Bean Validation constraint violation, e.g.
+     * {@code @NotBlank}) as a ProblemDetail extension property, same envelope, more actionable body.
+     */
+    @Override
+    protected @Nullable ResponseEntity<Object> handleMethodArgumentNotValid(
+            MethodArgumentNotValidException ex, HttpHeaders headers, HttpStatusCode status, WebRequest request) {
+        ProblemDetail body = ex.getBody();
+        List<Map<String, String>> errors = ex.getBindingResult().getFieldErrors().stream()
+                .map(fe -> Map.of(
+                        "field", fe.getField(), "message", Objects.requireNonNullElse(fe.getDefaultMessage(), "invalid")))
+                .toList();
+        body.setProperty("errors", errors);
+        return handleExceptionInternal(ex, body, headers, status, request);
     }
 }

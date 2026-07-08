@@ -1,3 +1,5 @@
 package li.selman.optimisticlocking.line.web;
 
-public record CreateLineRequest(int left, int right, String businessPartnerId) {}
+import jakarta.validation.constraints.NotBlank;
+
+public record CreateLineRequest(int left, int right, @NotBlank String businessPartnerId) {}

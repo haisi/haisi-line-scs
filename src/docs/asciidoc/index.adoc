@@ -135,6 +135,23 @@ omits the field rather than writing the literal string. Every other example in t
 `move-left-stale-precondition`, and so on -- carries this exact same envelope; only `status`,
 `title`, and `detail` change.
 
+==== Bean Validation errors
+
+`CreateLineRequest.businessPartnerId` carries `@NotBlank`, and the controller parameter is
+annotated `@Valid`, so a blank value is rejected before a create ever reaches `LineService`. Out of
+the box, Spring's own handling of a failed `@Valid` collapses every constraint violation into one
+deliberately generic `detail` -- `"Invalid request content."` -- which is RFC 9457-correct but
+useless to a client that needs to know *which* field failed and why. `ApiExceptionHandler`
+overrides `handleMethodArgumentNotValid` to add an `errors` array -- one `field`/`message` pair per
+failed constraint -- as a ProblemDetail extension property, same envelope, more actionable body:
+
+operation::create-line-validation-failed[snippets='http-request,http-response,response-fields']
+
+Every field-level constraint this API declares -- not just `@NotBlank` -- surfaces the same way:
+`MethodArgumentNotValidException.getBindingResult().getFieldErrors()` already carries one `FieldError`
+per violation regardless of which annotation raised it, so a future `@NotEmpty`, `@Size`, or
+`@Min`/`@Max` needs no extra handling here.
+
 [[business-partner-scoping]]
 === Business-partner scoping
 

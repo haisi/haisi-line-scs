@@ -5,6 +5,7 @@ import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.methodOn;
 
 import io.github.adr.linked.ADR;
 import jakarta.annotation.Nullable;
+import jakarta.validation.Valid;
 
 import java.util.List;
 
@@ -100,7 +101,7 @@ public class LineController {
     @PutMapping("{id}")
     @PreAuthorize("hasRoleForPartner(@lineAuthorization.CREATE_ROLE, #partnerId)")
     @ADR(1)
-    ResponseEntity<EntityModel<Line>> create(@PathVariable LineId id, @RequestBody CreateLineRequest body, @RequestHeader(name = "X-Partner-Id", required = false) @Nullable String partnerId) {
+    ResponseEntity<EntityModel<Line>> create(@PathVariable LineId id, @Valid @RequestBody CreateLineRequest body, @RequestHeader(name = "X-Partner-Id", required = false) @Nullable String partnerId) {
         LineCreationResult result =
                 lineService.create(new LineCommand.CreateLine(id, body.left(), body.right(), body.businessPartnerId()));
         // RFC 9110 §9.3.4: a 201 response MUST carry Location; a 200 replay needs none, since the
