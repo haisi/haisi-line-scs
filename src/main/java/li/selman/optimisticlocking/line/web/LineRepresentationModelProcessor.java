@@ -36,16 +36,9 @@ class LineRepresentationModelProcessor implements RepresentationModelProcessor<E
     }
 
     private void addCommandLink(EntityModel<Line> model, Line line, Class<? extends LineCommand> commandType) {
-        var rel = aggregateCommands.getRel(commandType);
+        String rel = aggregateCommands.getRel(commandType);
         model.addIf(
-                line.can(commandType) && isAuthorizedFor(commandType),
+                line.can(commandType) && lineAuthorization.can(commandType, line),
                 () -> entityLinks.linkFor(Line.class).slash(rel).withRel(rel));
-    }
-
-    private boolean isAuthorizedFor(Class<? extends LineCommand> commandType) {
-        if (commandType == LineCommand.DeleteLine.class) {
-            return lineAuthorization.canDelete();
-        }
-        return true;
     }
 }

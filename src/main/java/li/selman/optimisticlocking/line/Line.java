@@ -73,28 +73,14 @@ public class Line implements AggregateRoot<Line, LineId> {
                 && this.businessPartnerId.equals(businessPartnerId);
     }
 
-    public void moveLeft(int by) {
-        int newLeft = left.getPosition() + by;
-        if (newLeft < 0) {
-            throw new BusinessRuleViolated("left point may not go below zero");
-        }
-        validateInvariants(newLeft, right.getPosition());
-        left.move(by);
+    public void moveLeft(LineCommand.MoveLeft command) {
+        assertCan(command);
+        left.move(command.by());
     }
 
-    public void moveRight(int by) {
-        int newRight = right.getPosition() + by;
-        validateInvariants(left.getPosition(), newRight);
-        right.move(by);
-    }
-
-    private void validateInvariants(int leftPosition, int rightPosition) {
-        if (leftPosition > rightPosition) {
-            throw new BusinessRuleViolated("left (%d) would exceed right (%d)".formatted(leftPosition, rightPosition));
-        }
-        if (totalUpdates() >= MAX_UPDATES) {
-            throw new BusinessRuleViolated("line may only be updated %d times".formatted(MAX_UPDATES));
-        }
+    public void moveRight(LineCommand.MoveRight command) {
+        assertCan(command);
+        right.move(command.by());
     }
 
     private int totalUpdates() {
@@ -117,5 +103,41 @@ public class Line implements AggregateRoot<Line, LineId> {
             return totalUpdates() < MAX_UPDATES;
         }
         throw new IllegalStateException("No 'can' check for " + commandType);
+    }
+
+    private void assertCan(LineCommand command) {
+        if (!can(command)) {
+            throw new BusinessRuleViolated("Operation %s not allowed for line-id %s".formatted(command.name(), id));
+        }
+    }
+
+    /**
+     * Determines whether this <b>concrete command</b> would keep invariants, given its actual
+     * content (e.g. a {@code MoveLeft} whose {@code by} would push the left point below zero).
+     * Unlike {@link #can(Class)}, this can only be evaluated once the command exists, but it is
+     * the authoritative check -- {@link #moveLeft} and {@link #moveRight} enforce the same rules
+     * and throw {@link BusinessRuleViolated} rather than returning a boolean.
+     */
+    public boolean can(LineCommand command) {
+        if (!can(command.getClass())) {
+            // First we check whether the operation type itself would be allowed, regardless of command content
+            return false;
+        }
+        return switch (command) {
+            case LineCommand.CreateLine _ -> true;
+            case LineCommand.DeleteLine _ -> true;
+            case LineCommand.MoveLeft(int by) -> canMoveLeftBy(by);
+            case LineCommand.MoveRight(int by) -> canMoveRightBy(by);
+        };
+    }
+
+    private boolean canMoveLeftBy(int by) {
+        int newLeft = left.getPosition() + by;
+        return newLeft >= 0 && newLeft <= right.getPosition() && totalUpdates() < MAX_UPDATES;
+    }
+
+    private boolean canMoveRightBy(int by) {
+        int newRight = right.getPosition() + by;
+        return left.getPosition() <= newRight && totalUpdates() < MAX_UPDATES;
     }
 }

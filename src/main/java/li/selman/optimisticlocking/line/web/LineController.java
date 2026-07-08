@@ -56,7 +56,7 @@ public class LineController {
         return lineRepository
                 .findById(id)
                 .map(it -> {
-                    lineAuthorization.requireOwnership(it); // only the creating business partner may view
+                    lineAuthorization.assertOwnership(it); // only the creating business partner may view
                     if (ifNoneMatch.matches(it.getLockVersion())) {
                         return ResponseEntity.status(HttpStatus.NOT_MODIFIED)
                                 .eTag(it.getLockVersion())

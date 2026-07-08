@@ -48,18 +48,21 @@ public class LineAuthorization {
         return authorization.hasRoleForPartner(CREATE_ROLE, businessPartnerId);
     }
 
-    public void requireCanCreate(String businessPartnerId) {
+    public void assertCanCreate(String businessPartnerId) {
         if (!canCreate(businessPartnerId)) {
             throw new AccessDeniedException(
                     "Missing role '%s' for business partner %s".formatted(CREATE_ROLE, businessPartnerId));
         }
     }
 
+    /**
+     * Regardless of who created the line. A line can only be deleted by user-role line_#delete
+     */
     public boolean canDelete() {
         return authorization.hasRoleForAllPartners(DELETE_ROLE);
     }
 
-    public void requireCanDelete() {
+    public void assertCanDelete() {
         if (!canDelete()) {
             throw new AccessDeniedException("Missing role '%s'".formatted(DELETE_ROLE));
         }
@@ -84,9 +87,47 @@ public class LineAuthorization {
                 || authorization.hasRoleForPartner(DELETE_ROLE, businessPartnerId);
     }
 
-    public void requireOwnership(Line line) {
+    public void assertOwnership(Line line) {
         if (!isOwner(line)) {
             throw new AccessDeniedException("Not affiliated with business partner " + line.getBusinessPartnerId());
         }
+    }
+
+    /**
+     * A move mutates the line, so -- unlike {@link #isOwner}, which deliberately accepts *any*
+     * role for view access -- it needs the same {@code line_#create} role as creating one,
+     * checked against the line's own stored {@code businessPartnerId} rather than the
+     * caller-supplied {@code X-Partner-Id} header. This mirrors the defense-in-depth
+     * {@link #assertCanCreate} already gives {@code create}: naming a partner you're genuinely
+     * affiliated with (e.g. holding only {@code line_#read} there) must not let you move a
+     * *different* partner's line by id.
+     */
+    public boolean canEdit(Line line) {
+        return canCreate(line.getBusinessPartnerId());
+    }
+
+    public void assertCanEdit(Line line) {
+        if (!canEdit(line)) {
+            throw new AccessDeniedException(
+                    "Missing role '%s' for business partner %s".formatted(CREATE_ROLE, line.getBusinessPartnerId()));
+        }
+    }
+
+    /**
+     * Determines whether the caller is permitted to issue this <b>type of command</b> against
+     * {@code line}, mirroring {@link Line#can(Class)} on the authorization side. {@code create}
+     * doesn't apply here (the line already exists), so it defaults to allowed; {@code delete} is
+     * user-independent (see {@link #canDelete()}); {@code move} requires edit rights, same as
+     * {@link LineService#move} enforces via {@link #assertCanEdit(Line)}.
+     */
+    public boolean can(Class<? extends LineCommand> commandType, Line line) {
+        if (commandType == LineCommand.CreateLine.class) {
+            return true;
+        } else if (commandType == LineCommand.DeleteLine.class) {
+            return canDelete();
+        } else if (commandType == LineCommand.MoveLeft.class || commandType == LineCommand.MoveRight.class) {
+            return canEdit(line);
+        }
+        throw new IllegalStateException("No 'can' check for " + commandType);
     }
 }

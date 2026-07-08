@@ -16,4 +16,8 @@ public sealed interface LineCommand extends Command {
 
     @Relation("move-right")
     record MoveRight(int by) implements LineCommand {}
+
+    default String name() {
+        return getClass().getSimpleName();
+    }
 }
