@@ -9,6 +9,7 @@ import ch.admin.bit.jeap.security.test.resource.configuration.JeapOAuth2Integrat
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CyclicBarrier;
@@ -31,6 +32,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.hateoas.MediaTypes;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.client.RestTestClient;
 
@@ -700,6 +702,91 @@ class LineControllerITTest {
                     .expectBody()
                     .jsonPath("$.left")
                     .isEqualTo(4);
+        }
+    }
+
+    /**
+     * Every error response in this app -- both the domain exceptions in {@code line}/{@code
+     * shared} (which extend {@link org.springframework.web.ErrorResponseException}) and Spring
+     * MVC's own framework-level failures (enabled via {@code spring.mvc.problemdetails.enabled})
+     * -- comes back as an RFC 9457 {@code application/problem+json} body, not the framework's
+     * classic {@code {"timestamp","status","error","path"}} shape.
+     */
+    @Nested
+    class ErrorResponses {
+
+        @Test
+        void domainException_movingANonexistentLine_returns404ProblemDetail() {
+            UUID id = UUID.randomUUID(); // never saved
+
+            authedClient
+                    .put()
+                    .uri("/lines/{id}/left", id)
+                    .header(HttpHeaders.IF_MATCH, "\"1\"")
+                    .body(new MoveRequest(1))
+                    .exchange()
+                    .expectStatus()
+                    .isNotFound()
+                    .expectHeader()
+                    .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                    .expectBody()
+                    .jsonPath("$.status")
+                    .isEqualTo(404)
+                    .jsonPath("$.title")
+                    .isEqualTo("Not Found")
+                    .jsonPath("$.detail")
+                    .value(String.class, detail -> assertThat(detail).contains(id.toString()));
+        }
+
+        @Test
+        void domainException_violatingAnInvariant_returns422ProblemDetailWithReason() {
+            UUID id = UUID.randomUUID();
+            // left is already at 0: moving further left would push it negative.
+            lineRepository.save(
+                    LineFixture.newBuilder().id(id).line(0, 5).lockVersion(1).build());
+
+            authedClient
+                    .put()
+                    .uri("/lines/{id}/left", id)
+                    .header(HttpHeaders.IF_MATCH, "\"1\"")
+                    .body(new MoveRequest(-1))
+                    .exchange()
+                    .expectStatus()
+                    .isEqualTo(422)
+                    .expectHeader()
+                    .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                    .expectBody()
+                    .jsonPath("$.status")
+                    .isEqualTo(422)
+                    .jsonPath("$.detail")
+                    .value(String.class, detail -> assertThat(detail).contains("MoveLeft").contains(id.toString()));
+        }
+
+        /**
+         * Not just the domain exceptions: {@code spring.mvc.problemdetails.enabled} also converts
+         * Spring MVC's own framework-level failures -- here, a request body Jackson can't map onto
+         * {@link MoveRequest} at all ({@code by} is declared {@code int}) -- into the same {@code
+         * application/problem+json} shape.
+         */
+        @Test
+        void frameworkException_unreadableRequestBody_returns400ProblemDetail() {
+            UUID id = UUID.randomUUID();
+            lineRepository.save(
+                    LineFixture.newBuilder().id(id).line(3, 9).lockVersion(1).build());
+
+            authedClient
+                    .put()
+                    .uri("/lines/{id}/left", id)
+                    .header(HttpHeaders.IF_MATCH, "\"1\"")
+                    .body(Map.of("by", "not-a-number"))
+                    .exchange()
+                    .expectStatus()
+                    .isEqualTo(400)
+                    .expectHeader()
+                    .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                    .expectBody()
+                    .jsonPath("$.status")
+                    .isEqualTo(400);
         }
     }
 

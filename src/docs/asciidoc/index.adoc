@@ -110,6 +110,31 @@ corresponding `move-left`/`move-right` relation simply stops being offered.
 
 == HTTP API
 
+[[error-responses]]
+=== Error responses
+
+Every error this API returns -- whatever the status code, whatever raised it -- comes back as an
+`application/problem+json` body (https://www.rfc-editor.org/rfc/rfc9457.html[RFC 9457], the
+successor to RFC 7807), not the framework's classic `{"timestamp","status","error","path"}` shape.
+That's `spring.mvc.problemdetails.enabled`, plus every domain exception in `line`/`shared`
+(`LineNotFound`, `LineAlreadyExists`, `BusinessRuleViolated`, `IdempotencyKeyReused`,
+`PreconditionRequired`, `StaleStateIdentified`) extending Spring's `ErrorResponseException` instead
+of the older `@ResponseStatus`-on-a-plain-exception pattern -- see `ApiExceptionHandler` for the
+single `@RestControllerAdvice` that ties framework-level failures (a malformed request body, an
+unmapped route, ...) and these domain exceptions together into the same shape.
+
+A 404 raised deep in `LineService` -- moving a line id that doesn't exist -- is as good an example
+as any of the other status codes throughout this guide:
+
+operation::move-left-not-found[snippets='http-request,http-response,response-fields']
+
+`type` is conspicuously absent above: RFC 9457 defines it as defaulting to `about:blank` when a
+problem has no more specific URI to identify it by, and this app never registers one, so Jackson
+omits the field rather than writing the literal string. Every other example in this guide --
+`create-line-conflict`, `move-left-below-zero`, `move-left-missing-precondition`,
+`move-left-stale-precondition`, and so on -- carries this exact same envelope; only `status`,
+`title`, and `detail` change.
+
 [[business-partner-scoping]]
 === Business-partner scoping
 
@@ -128,7 +153,7 @@ any domain logic runs:
   attempting a create.
 
 A `GET` additionally re-checks ownership against the line's own stored `businessPartnerId` once
-it's loaded (`LineAuthorization.requireOwnership`), independent of the header -- so naming a partner
+it's loaded (`LineAuthorization.assertOwnership`), independent of the header -- so naming a partner
 you're genuinely affiliated with doesn't let you read a *different* partner's line by id.
 
 Omitting the header entirely is only valid for a caller whose role is business-partner-*independent*

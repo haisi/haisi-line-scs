@@ -2,16 +2,19 @@ package li.selman.optimisticlocking.shared;
 
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.http.ProblemDetail;
+import org.springframework.web.ErrorResponseException;
 
 /**
  * Thrown by the service when expected version no longer matches the current version.
  * In HTTP world, when If-Match no longer matches the current version. -> 412
  */
-@ResponseStatus(HttpStatus.PRECONDITION_FAILED)
-public class StaleStateIdentified extends RuntimeException {
+public class StaleStateIdentified extends ErrorResponseException {
 
     public StaleStateIdentified(UUID id) {
-        super(String.format("Aggregate of id %s is stale", id));
+        super(
+                HttpStatus.PRECONDITION_FAILED,
+                ProblemDetail.forStatusAndDetail(HttpStatus.PRECONDITION_FAILED, "Aggregate of id %s is stale".formatted(id)),
+                null);
     }
 }

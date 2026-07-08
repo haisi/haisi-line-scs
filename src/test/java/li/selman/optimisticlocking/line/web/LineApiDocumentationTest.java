@@ -300,6 +300,33 @@ class LineApiDocumentationTest {
                 .andDo(document("move-left-missing-precondition"));
     }
 
+    /**
+     * The canonical example for <<error-responses>>: every error this API returns, whatever the
+     * status code, shares this same {@code application/problem+json} (RFC 9457) shape.
+     */
+    @Test
+    void moveLeft_nonexistentLine_returns404ProblemDetail() throws Exception {
+        UUID id = UUID.randomUUID(); // never saved
+
+        mockMvc.perform(put("/lines/{id}/left", id)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearerToken)
+                        .header("X-Partner-Id", LineFixture.BUSINESS_PARTNER_ID)
+                        .header(HttpHeaders.IF_MATCH, "\"1\"")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new MoveRequest(1))))
+                .andExpect(status().isNotFound())
+                .andDo(document(
+                        "move-left-not-found",
+                        relaxedResponseFields(
+                                fieldWithPath("status").description("The HTTP status code, repeated in the body per RFC 9457."),
+                                fieldWithPath("title")
+                                        .description(
+                                                "Short, human-readable summary of the problem -- the HTTP status's reason phrase."),
+                                fieldWithPath("detail")
+                                        .description("Human-readable explanation specific to this occurrence of the problem."),
+                                fieldWithPath("instance").description("The request path that produced this problem."))));
+    }
+
     @Test
     void moveLeft_staleIfMatchIsRejected() throws Exception {
         UUID id = UUID.randomUUID();
