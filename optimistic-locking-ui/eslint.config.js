@@ -1,11 +1,12 @@
 // @ts-check
+const { defineConfig } = require('eslint/config');
 const eslint = require('@eslint/js');
 const tseslint = require('typescript-eslint');
 const angular = require('angular-eslint');
 const unicorn = require('eslint-plugin-unicorn').default;
 const prettier = require('eslint-config-prettier');
 
-module.exports = tseslint.config(
+module.exports = defineConfig(
   {
     ignores: ['dist/**', 'coverage/**', '.angular/**'],
   },
