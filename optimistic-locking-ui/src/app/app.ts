@@ -1,6 +1,8 @@
-import { Component, inject } from '@angular/core';
-import { Router } from '@angular/router';
+import { Component, computed, inject } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router } from '@angular/router';
 import { QdNotificationsModule, QdShellConfig, QdShellModule } from '@quadrel-enterprise-ui/framework';
+import { filter, map } from 'rxjs';
 import { DemoIdentity, DemoIdentityService } from './core/demo-identity.service';
 
 @Component({
@@ -17,11 +19,23 @@ export class App {
 
   readonly identity = this.demoIdentityService.identity;
 
-  // qd-shell renders `navigation` as its side navigation panel. There's only one feature area in
-  // this app, so it's always the current item -- still worth wiring for real (rather than
-  // leaving the shell without a navigation config) since it's how a user gets back to the list
-  // from anywhere in the app, not just via the detail page's own back button.
-  readonly shellConfig: QdShellConfig = {
+  private readonly url = toSignal(
+    this.router.events.pipe(
+      filter((event) => event instanceof NavigationEnd),
+      map(() => this.router.url),
+    ),
+    { initialValue: this.router.url },
+  );
+
+  private readonly isOnDetailRoute = computed(() => /^\/lines\/.+/.test(this.url()));
+
+  /**
+   * qd-shell has no content-projection slot for arbitrary page content (only `qd-comments`), and
+   * no built-in "back" concept of its own -- so a back affordance that lives in the shell itself,
+   * rather than in each page's own template, has to be a `toolbar` item: the one config-driven,
+   * clickable icon slot the shell's header exposes. Only shown while on a line's detail route.
+   */
+  readonly shellConfig = computed<QdShellConfig>(() => ({
     title: { i18n: 'i18n.app.title' },
     navigation: [
       {
@@ -33,7 +47,21 @@ export class App {
         },
       },
     ],
-  };
+    ...(this.isOnDetailRoute()
+      ? {
+          toolbar: {
+            items: [
+              {
+                qdIcon: 'arrowLeft',
+                handler: () => {
+                  void this.router.navigate(['/lines']);
+                },
+              },
+            ],
+          },
+        }
+      : {}),
+  }));
 
   onIdentityChange(event: Event): void {
     const value = (event.target as HTMLSelectElement).value as DemoIdentity | '';

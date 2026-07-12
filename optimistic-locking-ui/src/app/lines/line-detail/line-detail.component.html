@@ -1,7 +1,3 @@
-<button qdIconButton class="back-button" (click)="goBackToList()" aria-label="Back to lines">
-  <qd-icon icon="arrowLeft"></qd-icon>
-</button>
-
 @if (pageConfig(); as config) {
   <qd-page [config]="config">
     @if (line(); as line) {

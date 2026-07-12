@@ -1,8 +1,6 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
-  QdButtonModule,
-  QdIconModule,
   QdListModule,
   QdNotificationsService,
   QdPageConfig,
@@ -14,13 +12,8 @@ import { toProblemDetail } from '../../core/problem-detail';
 
 @Component({
   selector: 'app-line-detail',
-  imports: [QdButtonModule, QdIconModule, QdPageModule, QdSectionModule, QdListModule],
+  imports: [QdPageModule, QdSectionModule, QdListModule],
   templateUrl: './line-detail.component.html',
-  styles: `
-    .back-button {
-      margin: 1rem 0 0 1rem;
-    }
-  `,
 })
 export class LineDetailComponent {
   private readonly route = inject(ActivatedRoute);
@@ -93,7 +86,7 @@ export class LineDetailComponent {
     });
   }
 
-  goBackToList(): void {
+  private goBackToList(): void {
     void this.router.navigate(['/lines']);
   }
 }
