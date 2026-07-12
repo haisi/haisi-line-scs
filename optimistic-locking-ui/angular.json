@@ -103,27 +103,13 @@
           "builder": "@angular/build:extract-i18n"
         },
         "test": {
-          "builder": "@angular/build:karma",
+          "builder": "@angular/build:unit-test",
           "options": {
-            "polyfills": [
-              "zone.js",
-              "zone.js/testing"
-            ],
             "tsConfig": "tsconfig.spec.json",
-            "inlineStyleLanguage": "scss",
-            "stylePreprocessorOptions": {
-              "includePaths": [
-                "node_modules/@quadrel-enterprise-ui/framework/src/assets/styles"
-              ]
-            },
-            "assets": [
-              {
-                "glob": "**/*",
-                "input": "public"
-              }
-            ],
-            "styles": [
-              "src/styles.scss"
+            "buildTarget": "::development",
+            "runner": "vitest",
+            "browsers": [
+              "chromiumHeadless"
             ]
           }
         }

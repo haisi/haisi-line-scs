@@ -48,8 +48,18 @@ enough for backend-only iteration (Maven resolves the UI jar from the local repo
 
 For frontend-only iteration, `cd optimistic-locking-ui && npm start` runs `ng serve` with a dev
 proxy (`proxy.conf.json`) forwarding `/lines`, `/dev`, `/docs` to a backend already running on
-`:8080` (see above) — no CORS configuration exists or is needed. `npm test` runs the Angular unit
-tests (Karma/Jasmine).
+`:8080` (see above) — no CORS configuration exists or is needed. `npm test` runs the Angular unit/
+component tests via the `@angular/build:unit-test` builder on Vitest (Browser Mode, a real headless
+Chromium via Playwright, configured in `angular.json`'s `test` target) — not Karma/Jasmine. It's a
+regular Vitest suite: runnable/debuggable from IntelliJ like any other test, watches by default in
+a TTY, and runs once under `npm test -- --watch=false`.
+
+Component tests double as the fastest way to develop a component against fixed data without the
+backend: e.g. `line-detail.component.spec.ts` fills `LineDetailComponent` via `TestBed` provider
+overrides (`LineService`, `ActivatedRoute`, etc. — no HTTP mocking), asserts on the real rendered
+DOM through `@vitest/browser`'s `page`, and calls `page.screenshot()` as a side effect of that same
+test. Add another page/component to screenshot this way by adding another `*.component.spec.ts`
+there, not a separate script.
 
 `./mvnw package` (or `verify`/`install`) additionally screenshots the frontend into the API guide
 (see the "Web UI" section of `index.adoc`), via two `exec-maven-plugin` executions bound to
@@ -57,11 +67,8 @@ tests (Karma/Jasmine).
 `generated-docs.directory/images` before the doc-rendering step embeds them:
 - `take-overview-screenshot.sh` boots the app under the `local` profile and screenshots the real,
   running Lines overview page — this one deliberately exercises the actual integration.
-- `optimistic-locking-ui/scripts/screenshot-components.mjs` screenshots everything else (currently
-  just the line detail page) against the built frontend *alone*: no backend, no JVM — it serves
-  `optimistic-locking-ui`'s own built static assets and mocks each page's HTTP calls directly via
-  Playwright's request interception. Add another page/component to screenshot this way by adding
-  an entry to that script's `specs` array, not by wiring up a new Maven execution.
+- `take-component-screenshots.sh` runs `optimistic-locking-ui`'s own `npm test -- --watch=false`
+  (see above) and copies whatever `page.screenshot()` calls produced — no backend, no JVM.
 
 `./mvnw test` alone skips both, same as it already skips the rest of the doc generation. This
 needs a Playwright-installed Chromium

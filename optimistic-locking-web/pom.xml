@@ -485,12 +485,13 @@
                 integration, all within this one execution so there's no second execution of the
                 same goal for Maven to potentially reorder relative to it.
 
-                screenshot-components.mjs takes the opposite approach for everything else: no
-                backend, no JVM at all; it serves optimistic-locking-ui's already-built static
-                assets itself and mocks whatever HTTP calls each page/component makes via
-                Playwright's own request interception. Add more pages/components to screenshot this
-                way by editing the `specs` array in that script, not by adding another execution
-                here.
+                take-component-screenshots.sh takes the opposite approach for everything else: no
+                backend, no JVM at all; it runs optimistic-locking-ui's own component test suite
+                (Vitest Browser Mode, see angular.json's "test" target), where TestBed provider
+                overrides fill each component with fake data and page.screenshot() is a side effect
+                of the test itself, not a separate script. Add more pages/components to screenshot
+                this way by adding another *.component.spec.ts there, not by adding another
+                execution here.
                 -->
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
@@ -513,11 +514,7 @@
                         </goals>
                         <phase>prepare-package</phase>
                         <configuration>
-                            <executable>node</executable>
-                            <arguments>
-                                <argument>${project.basedir}/../optimistic-locking-ui/scripts/screenshot-components.mjs</argument>
-                                <argument>--out-dir=${generated-docs.directory}/images</argument>
-                            </arguments>
+                            <executable>${project.basedir}/take-component-screenshots.sh</executable>
                         </configuration>
                     </execution>
                 </executions>
