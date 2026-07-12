@@ -1,0 +1,12 @@
+.permission-denied {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 3rem 1rem;
+  text-align: center;
+
+  qd-icon {
+    font-size: 3rem;
+  }
+}

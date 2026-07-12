@@ -1,5 +1,11 @@
 <qd-page [config]="pageConfig">
-  <qd-section [config]="sectionConfig">
-    <qd-table [config]="tableConfig"></qd-table>
-  </qd-section>
+  @if (hasIdentity()) {
+    <qd-section [config]="sectionConfig">
+      <qd-table [config]="tableConfig"></qd-table>
+    </qd-section>
+  } @else {
+    <qd-section>
+      <app-permission-denied></app-permission-denied>
+    </qd-section>
+  }
 </qd-page>
