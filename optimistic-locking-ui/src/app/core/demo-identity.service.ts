@@ -1,6 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable, signal } from '@angular/core';
-import { map, Observable, tap } from 'rxjs';
+import { Observable, tap } from 'rxjs';
 
 export type DemoIdentity = 'viewer' | 'administrator';
 
@@ -21,16 +21,13 @@ export class DemoIdentityService {
   readonly identity = this.identitySignal.asReadonly();
   readonly token = this.tokenSignal.asReadonly();
 
-  login(identity: DemoIdentity): Observable<void> {
-    return this.http
-      .post<{ token: string }>('/dev/login', null, { params: { identity } })
-      .pipe(
-        tap(({ token }) => {
-          this.identitySignal.set(identity);
-          this.tokenSignal.set(token);
-        }),
-        map(() => undefined),
-      );
+  login(identity: DemoIdentity): Observable<unknown> {
+    return this.http.post<{ token: string }>('/dev/login', null, { params: { identity } }).pipe(
+      tap(({ token }) => {
+        this.identitySignal.set(identity);
+        this.tokenSignal.set(token);
+      }),
+    );
   }
 
   logout(): void {

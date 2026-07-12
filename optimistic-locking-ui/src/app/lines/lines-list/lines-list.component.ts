@@ -71,6 +71,9 @@ export class LinesListComponent {
   constructor() {
     effect(() => {
       this.identityService.identity();
+      // Subject<number | undefined>'s "next" isn't an optional parameter -- unlike a plain
+      // `Subject<void>`, TS requires an explicit argument here even though it's `undefined`.
+      // eslint-disable-next-line unicorn/no-useless-undefined
       this.refresh.next(undefined);
     });
   }

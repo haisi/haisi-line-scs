@@ -28,6 +28,16 @@ Then, we explain how to design idempotent HTTP API.
 Furthermore, this repo contains a Spring-Boot application and IT-Test
 showing the learning in practice.
 
+== Code quality
+
+The Angular frontend (`optimistic-locking-ui`) lints with https://github.com/angular-eslint/angular-eslint[angular-eslint],
+https://typescript-eslint.io/[typescript-eslint]'s type-checked `strict`/`stylistic` rule sets, and
+https://github.com/sindresorhus/eslint-plugin-unicorn[eslint-plugin-unicorn] -- `any` is a lint
+error, not just a style preference. Run `npm run lint` (or `npm run lint -- --fix`) inside
+`optimistic-locking-ui`; `./mvnw package` runs it too and fails the build on any violation. See
+`optimistic-locking-ui/eslint.config.js` and `CLAUDE.md` for the exact rule set and the reasoning
+behind each deviation from the plugins' defaults.
+
 == Credits
 This content was heavily influenced by the following resources.
 

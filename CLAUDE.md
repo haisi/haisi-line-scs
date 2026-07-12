@@ -67,6 +67,14 @@ DOM through `@vitest/browser`'s `page`, and calls `page.screenshot()` as a side 
 test. Add another page/component to screenshot this way by adding another `*.component.spec.ts`
 there, not a separate script.
 
+`npm run lint` (or `npm run lint -- --fix`) runs ESLint — see `optimistic-locking-ui/eslint.config.js`
+and the "Frontend code quality" section below for the exact rule set. `optimistic-locking-ui/pom.xml`
+also binds it to `generate-resources`, right before the production Angular build, so any Maven
+command that includes that module (a full reactor build, `-pl optimistic-locking-ui`, or `-am` from
+`optimistic-locking-web`) fails on a lint error the same way it would fail on a compile error. The
+`-pl optimistic-locking-web`-alone backend iteration loop described above never touches the UI
+module at all, so it skips this too, same as it skips `ng build` itself.
+
 `./mvnw package` (or `verify`/`install`) additionally screenshots the frontend into the API guide
 (see the "Web UI" section of `index.adoc`), via two `exec-maven-plugin` executions bound to
 `prepare-package` in `optimistic-locking-web/pom.xml`, both landing in
@@ -81,7 +89,8 @@ needs a Playwright-installed Chromium
 (`cd optimistic-locking-ui && npx playwright install chromium`, one-time) in addition to Node/npm.
 
 There is no separate lint command configured for the backend; code style follows the
-palantir-java-format IntelliJ settings checked into `.idea/`.
+palantir-java-format IntelliJ settings checked into `.idea/`. The frontend's ESLint setup is
+described above and in "Frontend code quality" below.
 
 ## Architecture
 
@@ -135,9 +144,10 @@ palantir-java-format IntelliJ settings checked into `.idea/`.
   app built on `@quadrel-enterprise-ui/framework`. It lists `Line`s, shows one's details, and gates
   the delete action on the fetched resource's `_links.delete` HATEOAS link being present — a true
   server-computed visibility gate, not a client-side re-implementation of `line_#delete`. Built via
-  `exec-maven-plugin` (`npm ci && npm run build`, output straight into `target/classes/static`) and
-  consumed by `optimistic-locking-web` as a plain jar dependency, so Spring Boot's default
-  static-resource handling serves it from `/`. Routing is hash-based (`/#/lines/:id`) specifically
+  `exec-maven-plugin` (`npm ci && npm run lint && npm run build`, output straight into
+  `target/classes/static`) and consumed by `optimistic-locking-web` as a plain jar dependency, so
+  Spring Boot's default static-resource handling serves it from `/`. Routing is hash-based
+  (`/#/lines/:id`) specifically
   because `LineController` already owns the path `/lines/**`; a path-based Angular route there
   would collide with the real REST endpoint on a hard refresh.
 - **Local dev auth (`shared/web/localdev/`)**: the backend's OAuth2 issuer is a documented
@@ -150,3 +160,33 @@ palantir-java-format IntelliJ settings checked into `.idea/`.
   delete button appearing/disappearing. `LocalDataSeeder` (same profile) seeds a handful of `acme`
   lines on startup so the list isn't empty. None of this is reachable without explicitly opting into
   the `local` profile.
+
+## Frontend code quality
+
+`optimistic-locking-ui/eslint.config.js` (ESLint 9 flat config, scaffolded via
+`ng add @angular-eslint/schematics` and hand-extended) is deliberately stringent: `@typescript-eslint/no-explicit-any`
+is an error (on top of `strictTypeChecked`'s own `no-unsafe-*` rules, which catch `any` leaking in
+from untyped call sites even where it's never written explicitly), and `strictTypeChecked` +
+`stylisticTypeChecked` (typescript-eslint's type-aware rule sets, enabled via `projectService: true`
+so they pick up the right `tsconfig` per file) run alongside `angular-eslint`'s `tsRecommended` and
+`eslint-plugin-unicorn`'s `recommended` set. `eslint-config-prettier` sits last in the `extends`
+chain to defer all formatting to the project's existing Prettier config (see `package.json`)
+instead of fighting it.
+
+Airbnb's config was deliberately **not** used: `eslint-config-airbnb-typescript` and its Angular
+shims are still eslintrc-format packages with no first-party flat-config or ESLint 9 support, and
+their rules are largely plain-JS/React style conventions that `eslint-config-prettier` +
+`stylisticTypeChecked` already cover better for a TypeScript/Angular codebase.
+
+A handful of `unicorn`/`typescript-eslint` defaults are turned off or reconfigured directly in
+`eslint.config.js`, each with a comment explaining why — e.g. `unicorn/no-null` (Angular/RxJS/the
+DOM use `null` idiomatically), `unicorn/prevent-abbreviations` (renames established short names
+like `params`), `unicorn/prefer-top-level-await` (this project's default Angular CLI browser
+support matrix predates it), and `@typescript-eslint/no-extraneous-class` with
+`allowWithDecorator: true` (a `@Component`/`@Injectable`-decorated class with no members of its own
+is normal Angular, not the anti-pattern the rule otherwise catches). Treat any future rule-disable
+the same way: a one-line comment on *why*, not just *that*.
+
+`npm run lint -- --fix` auto-fixes what it can; anything left needs a real code change (see recent
+git history for examples — e.g. replacing a non-null assertion on a route param with a function
+that throws a clear error instead of asserting past a `null`).

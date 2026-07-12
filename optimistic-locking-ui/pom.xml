@@ -42,6 +42,22 @@
                         </configuration>
                     </execution>
                     <execution>
+                        <!-- Fails the build on any ESLint error (see eslint.config.js) before
+                        spending time on the production Angular build below. -->
+                        <id>ng-lint</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>npm</executable>
+                            <arguments>
+                                <argument>run</argument>
+                                <argument>lint</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                    <execution>
                         <id>ng-build</id>
                         <phase>generate-resources</phase>
                         <goals>

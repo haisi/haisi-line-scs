@@ -44,7 +44,7 @@ describe('LineDetailComponent', () => {
           provide: LineService,
           useValue: {
             get: () => of({ line: fakeLine, etag: '"1"' }),
-            delete: () => of(undefined),
+            delete: () => of(),
           },
         },
         { provide: QdNotificationsService, useValue: { add: () => {} } },
@@ -62,7 +62,11 @@ describe('LineDetailComponent', () => {
     // qd-page's own delete icon button has no accessible name, only quadrel's own
     // data-test-id="delete-button" -- matches the attribute LineRepresentationModelProcessor's
     // permission gating (a present-or-absent _links.delete, mocked above) is ultimately about.
-    const deleteButton = page.elementLocator(document.querySelector('[data-test-id="delete-button"]')!);
+    const deleteButtonElement = document.querySelector('[data-test-id="delete-button"]');
+    if (deleteButtonElement === null) {
+      throw new Error('delete button not found');
+    }
+    const deleteButton = page.elementLocator(deleteButtonElement);
     await expect.element(deleteButton).toBeVisible();
 
     // Default test iframe viewport is mobile-sized; widen it to match the desktop screenshot

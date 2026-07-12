@@ -12,6 +12,14 @@ import { catchError, of } from 'rxjs';
 import { LineService } from '../../core/line.service';
 import { toProblemDetail } from '../../core/problem-detail';
 
+function requireRouteId(route: ActivatedRoute): string {
+  const id = route.snapshot.paramMap.get('id');
+  if (id === null) {
+    throw new Error('app-line-detail requires a route with an "id" param');
+  }
+  return id;
+}
+
 @Component({
   selector: 'app-line-detail',
   imports: [QdPageModule, QdSectionModule, QdListModule],
@@ -23,7 +31,7 @@ export class LineDetailComponent {
   private readonly lineService = inject(LineService);
   private readonly notifications = inject(QdNotificationsService);
 
-  private readonly id = this.route.snapshot.paramMap.get('id') as string;
+  private readonly id = requireRouteId(this.route);
 
   /**
    * A single fetch, not a live subscription: `LineService.get` completes after its one HTTP
@@ -36,7 +44,7 @@ export class LineDetailComponent {
     this.lineService.get(this.id).pipe(
       catchError(() => {
         this.goBackToList();
-        return of(undefined);
+        return of();
       }),
     ),
   );
@@ -71,14 +79,14 @@ export class LineDetailComponent {
       pageType: 'inspect',
       pageTypeConfig: {
         hideEdit: true,
-        cancel: { handler: () => this.goBackToList() },
-        ...(line.canDelete ? { delete: { handler: () => this.onDelete() } } : {}),
+        cancel: { handler: () => { this.goBackToList(); } },
+        ...(line.canDelete ? { delete: { handler: () => { this.onDelete(); } } } : {}),
       },
     };
   });
 
   onDelete(): void {
-    if (!window.confirm('Delete this line? This cannot be undone.')) {
+    if (!globalThis.confirm('Delete this line? This cannot be undone.')) {
       return;
     }
     const etag = this.lineWithETag()?.etag ?? '';

@@ -13,15 +13,17 @@ export class LineService {
 
   get(id: string): Observable<LineWithETag> {
     return this.http.get<Line>(`/lines/${id}`, { observe: 'response' }).pipe(
-      map((response) => ({
-        line: response.body as Line,
-        etag: response.headers.get('ETag') ?? '',
-      })),
+      map((response) => {
+        if (response.body === null) {
+          throw new Error(`GET /lines/${id} returned no body`);
+        }
+        return { line: response.body, etag: response.headers.get('ETag') ?? '' };
+      }),
     );
   }
 
-  delete(id: string, etag: string): Observable<void> {
-    return this.http.delete<void>(`/lines/${id}`, {
+  delete(id: string, etag: string): Observable<unknown> {
+    return this.http.delete(`/lines/${id}`, {
       headers: { 'If-Match': etag },
     });
   }

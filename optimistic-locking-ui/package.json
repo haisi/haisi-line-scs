@@ -8,7 +8,8 @@
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "test:debug": "ng test --configuration=debug",
-    "screenshot": "node scripts/screenshot-overview.mjs"
+    "screenshot": "node scripts/screenshot-overview.mjs",
+    "lint": "ng lint"
   },
   "prettier": {
     "printWidth": 100,
@@ -43,8 +44,13 @@
     "@angular/cli": "^20.3.32",
     "@angular/compiler-cli": "^20.3.0",
     "@vitest/browser": "~3.2.7",
+    "angular-eslint": "20.7.0",
+    "eslint": "^9.39.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-unicorn": "^65.0.0",
     "playwright": "^1.61.1",
     "typescript": "~5.9.2",
+    "typescript-eslint": "8.46.4",
     "vitest": "~3.2.7"
   }
 }
