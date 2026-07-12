@@ -7,7 +7,7 @@ import { DemoIdentityService } from './demo-identity.service';
  * method except DELETE: DELETE is the one business-partner-*independent* operation (line_#delete
  * is a user role, not scoped to a partner -- see LineAuthorization), so it's deliberately left off
  * here to mirror the backend's own model instead of sending a header the delete endpoint ignores.
- * GET, and PUT (create, and the move-left/move-right endpoints) are all business-partner-scoped
+ * GET, and PUT (create, and the four per-point move endpoints) are all business-partner-scoped
  * (line_#read / line_#create), so they all need it.
  */
 export const authInterceptor: HttpInterceptorFn = (req, next) => {

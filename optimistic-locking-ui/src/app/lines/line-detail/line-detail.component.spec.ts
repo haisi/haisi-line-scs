@@ -10,13 +10,34 @@ import { LineDetailComponent } from './line-detail.component';
 
 const fakeLine = {
   id: '00000000-0000-0000-0000-000000000001',
-  left: 2,
-  right: 8,
   businessPartnerId: 'acme',
   _links: {
     self: { href: 'http://localhost/lines/00000000-0000-0000-0000-000000000001' },
     delete: { href: 'http://localhost/lines/00000000-0000-0000-0000-000000000001/delete' },
-    'move-right': { href: 'http://localhost/lines/00000000-0000-0000-0000-000000000001/right' },
+  },
+  _embedded: {
+    leftPoint: {
+      id: 1,
+      position: 2,
+      numberOfUpdates: 1,
+      _links: {},
+    },
+    rightPoint: {
+      id: 2,
+      position: 8,
+      numberOfUpdates: 0,
+      _links: {
+        moveRight: { href: 'http://localhost/lines/00000000-0000-0000-0000-000000000001/right/move-right' },
+      },
+    },
+    operations: [
+      {
+        operation: 'MoveRight',
+        detail: 'right point moved by 1',
+        performedBy: 'demo-administrator',
+        performedAt: '2026-07-12T18:20:00Z',
+      },
+    ],
   },
 };
 
@@ -58,7 +79,9 @@ describe('LineDetailComponent', () => {
     fixture.detectChanges();
 
     await expect.element(page.getByText('acme')).toBeVisible();
-    await expect.element(page.getByText('8')).toBeVisible();
+    // exact: true -- the new Activity section's formatted `performedAt` timestamp also contains
+    // "8" as a substring (e.g. "8:20:00 PM"), which would otherwise make this match ambiguous.
+    await expect.element(page.getByText('8', { exact: true })).toBeVisible();
 
     // qd-page's own delete icon button has no accessible name, only quadrel's own
     // data-test-id="delete-button" -- matches the attribute LineRepresentationModelProcessor's
@@ -78,6 +101,14 @@ describe('LineDetailComponent', () => {
       throw new Error('edit action button not found');
     }
     await expect.element(page.elementLocator(editButtonElement)).toBeVisible();
+
+    // The Activity section renders the line's operations audit trail (see LineModelAssembler's
+    // `operations` relation, mocked above).
+    const activityTable = document.querySelector('[data-test-id="activity-table"]');
+    if (activityTable === null) {
+      throw new Error('activity table not found');
+    }
+    await expect.element(page.getByText('right point moved by 1')).toBeVisible();
 
     // Default test iframe viewport is mobile-sized; widen it to match the desktop screenshot
     // already used for the overview page (see screenshot-overview.mjs) before capturing this one.

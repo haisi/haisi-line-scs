@@ -114,6 +114,7 @@ class LineApiDocumentationTest {
         jdbcTemplate.update("DELETE FROM line");
         jdbcTemplate.update("DELETE FROM left_point");
         jdbcTemplate.update("DELETE FROM right_point");
+        jdbcTemplate.update("DELETE FROM manual_operation");
     }
 
     @Test
@@ -146,9 +147,11 @@ class LineApiDocumentationTest {
                                 headerWithName(HttpHeaders.LOCATION).description("URI of the newly created line.")),
                         relaxedResponseFields(
                                 fieldWithPath("id").description("The line's id (echoes the path parameter)."),
-                                fieldWithPath("left").description("Current position of the left point."),
-                                fieldWithPath("right").description("Current position of the right point."),
-                                fieldWithPath("businessPartnerId").description("Owning business partner."))));
+                                fieldWithPath("businessPartnerId").description("Owning business partner."),
+                                fieldWithPath("_embedded.leftPoint.position")
+                                        .description("Current position of the left point."),
+                                fieldWithPath("_embedded.rightPoint.position")
+                                        .description("Current position of the right point."))));
     }
 
     @Test
@@ -261,17 +264,18 @@ class LineApiDocumentationTest {
                                                 "Current aggregate version, quoted; reflect it back as `If-Match` to edit or delete.")),
                         relaxedResponseFields(
                                 fieldWithPath("id").description("The line's id."),
-                                fieldWithPath("left").description("Current position of the left point."),
-                                fieldWithPath("right").description("Current position of the right point."),
-                                fieldWithPath("businessPartnerId").description("Owning business partner.")),
-                        relaxedLinks(
-                                linkWithRel("self").description("This line."),
-                                linkWithRel("move-left")
-                                        .description("Present only while `left > 0` and the update budget remains -- "
-                                                + "reflects `Line.canMoveLeft()`."),
-                                linkWithRel("move-right")
-                                        .description("Present only while the update budget remains -- reflects "
-                                                + "`Line.canMoveRight()`."))));
+                                fieldWithPath("businessPartnerId").description("Owning business partner."),
+                                fieldWithPath("_embedded.leftPoint.id").description("Id of the left point."),
+                                fieldWithPath("_embedded.leftPoint.position")
+                                        .description("Current position of the left point."),
+                                fieldWithPath("_embedded.leftPoint.numberOfUpdates")
+                                        .description("How many times the left point has been moved so far."),
+                                fieldWithPath("_embedded.rightPoint.id").description("Id of the right point."),
+                                fieldWithPath("_embedded.rightPoint.position")
+                                        .description("Current position of the right point."),
+                                fieldWithPath("_embedded.rightPoint.numberOfUpdates")
+                                        .description("How many times the right point has been moved so far.")),
+                        relaxedLinks(linkWithRel("self").description("This line."))));
     }
 
     @Test
@@ -296,7 +300,7 @@ class LineApiDocumentationTest {
         lineRepository.save(
                 LineFixture.newBuilder().id(id).line(3, 9).lockVersion(1).build());
 
-        mockMvc.perform(put("/lines/{id}/left", id)
+        mockMvc.perform(put("/lines/{id}/left/move-right", id)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearerToken)
                         .header("X-Partner-Id", LineFixture.BUSINESS_PARTNER_ID)
                         .header(HttpHeaders.IF_MATCH, "\"1\"")
@@ -313,12 +317,14 @@ class LineApiDocumentationTest {
                                 headerWithName("X-Partner-Id")
                                         .description("Business partner context this request acts in -- see "
                                                 + "<<business-partner-scoping>>.")),
-                        relaxedRequestFields(
-                                fieldWithPath("by").description("Signed offset to add to the left point's position.")),
+                        relaxedRequestFields(fieldWithPath("by")
+                                .description("Positive magnitude to move the left point to the right by -- "
+                                        + "the URL (which point, `move-left`/`move-right`) fixes the sign.")),
                         responseHeaders(headerWithName(HttpHeaders.ETAG)
                                 .description("New aggregate version -- bumped even though only the left "
                                         + "point's row changed, via the forced-increment read.")),
-                        relaxedResponseFields(fieldWithPath("left").description("New position of the left point."))));
+                        relaxedResponseFields(fieldWithPath("_embedded.leftPoint.position")
+                                .description("New position of the left point."))));
     }
 
     @Test
@@ -329,7 +335,7 @@ class LineApiDocumentationTest {
 
         // 428 Precondition Required (RFC 6585 SS3): without a stated If-Match, a lost update could
         // never be told apart from a legitimate move -- so this app makes the precondition mandatory.
-        mockMvc.perform(put("/lines/{id}/left", id)
+        mockMvc.perform(put("/lines/{id}/left/move-right", id)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearerToken)
                         .header("X-Partner-Id", LineFixture.BUSINESS_PARTNER_ID)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -346,7 +352,7 @@ class LineApiDocumentationTest {
     void moveLeft_nonexistentLine_returns404ProblemDetail() throws Exception {
         UUID id = UUID.randomUUID(); // never saved
 
-        mockMvc.perform(put("/lines/{id}/left", id)
+        mockMvc.perform(put("/lines/{id}/left/move-right", id)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearerToken)
                         .header("X-Partner-Id", LineFixture.BUSINESS_PARTNER_ID)
                         .header(HttpHeaders.IF_MATCH, "\"1\"")
@@ -374,7 +380,7 @@ class LineApiDocumentationTest {
         lineRepository.save(
                 LineFixture.newBuilder().id(id).line(3, 9).lockVersion(1).build());
 
-        mockMvc.perform(put("/lines/{id}/left", id)
+        mockMvc.perform(put("/lines/{id}/left/move-right", id)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearerToken)
                         .header("X-Partner-Id", LineFixture.BUSINESS_PARTNER_ID)
                         .header(HttpHeaders.IF_MATCH, "\"1\"")
@@ -384,7 +390,7 @@ class LineApiDocumentationTest {
 
         // 412 Precondition Failed (RFC 9110 SS13.1.1): the stated version ("1") no longer
         // strong-matches the current one (now "2") -- someone else's move landed first.
-        mockMvc.perform(put("/lines/{id}/left", id)
+        mockMvc.perform(put("/lines/{id}/left/move-right", id)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearerToken)
                         .header("X-Partner-Id", LineFixture.BUSINESS_PARTNER_ID)
                         .header(HttpHeaders.IF_MATCH, "\"1\"")
@@ -403,12 +409,12 @@ class LineApiDocumentationTest {
 
         // 422 Unprocessable Content: syntactically valid request, semantically impossible --
         // `Line.moveLeft` never lets the left point go below zero.
-        mockMvc.perform(put("/lines/{id}/left", id)
+        mockMvc.perform(put("/lines/{id}/left/move-left", id)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearerToken)
                         .header("X-Partner-Id", LineFixture.BUSINESS_PARTNER_ID)
                         .header(HttpHeaders.IF_MATCH, "\"1\"")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new MoveRequest(-1))))
+                        .content(objectMapper.writeValueAsString(new MoveRequest(1))))
                 .andExpect(status().is(422))
                 .andDo(document("move-left-below-zero"));
     }
@@ -426,7 +432,7 @@ class LineApiDocumentationTest {
                 .rightUpdates(2)
                 .build());
 
-        mockMvc.perform(put("/lines/{id}/left", id)
+        mockMvc.perform(put("/lines/{id}/left/move-right", id)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearerToken)
                         .header("X-Partner-Id", LineFixture.BUSINESS_PARTNER_ID)
                         .header(HttpHeaders.IF_MATCH, "\"1\"")
@@ -443,7 +449,7 @@ class LineApiDocumentationTest {
                 LineFixture.newBuilder().id(id).line(3, 9).lockVersion(1).build());
         String idempotencyKey = UUID.randomUUID().toString();
 
-        mockMvc.perform(put("/lines/{id}/left", id)
+        mockMvc.perform(put("/lines/{id}/left/move-right", id)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearerToken)
                         .header("X-Partner-Id", LineFixture.BUSINESS_PARTNER_ID)
                         .header(HttpHeaders.IF_MATCH, "\"1\"")
@@ -455,7 +461,7 @@ class LineApiDocumentationTest {
         // Retried with the very same (now-stale) If-Match: the recognised Idempotency-Key
         // short-circuits straight to a replay of the first attempt's result, skipping the
         // precondition check entirely -- so this must not become a 412.
-        mockMvc.perform(put("/lines/{id}/left", id)
+        mockMvc.perform(put("/lines/{id}/left/move-right", id)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearerToken)
                         .header("X-Partner-Id", LineFixture.BUSINESS_PARTNER_ID)
                         .header(HttpHeaders.IF_MATCH, "\"1\"")

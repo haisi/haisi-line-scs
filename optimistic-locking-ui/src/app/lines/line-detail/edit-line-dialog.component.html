@@ -1,13 +1,49 @@
 <qd-dialog>
-  <form [formGroup]="form">
-    <qd-input formControlName="left" [config]="leftConfig" data-test-id="edit-left-input"></qd-input>
-    <qd-input formControlName="right" [config]="rightConfig" data-test-id="edit-right-input"></qd-input>
-  </form>
+  <div>
+    <p>Left point: <strong data-test-id="left-point-position">{{ leftPoint().position }}</strong></p>
+    <button
+      qdButton
+      color="secondary"
+      [disabled]="pending() || !leftPoint()._links?.moveLeft"
+      (click)="moveLeftPointLeft()"
+      data-test-id="move-left-point-left"
+    >
+      Move left
+    </button>
+    <button
+      qdButton
+      color="secondary"
+      [disabled]="pending() || !leftPoint()._links?.moveRight"
+      (click)="moveLeftPointRight()"
+      data-test-id="move-left-point-right"
+    >
+      Move right
+    </button>
+  </div>
+
+  <div>
+    <p>Right point: <strong data-test-id="right-point-position">{{ rightPoint().position }}</strong></p>
+    <button
+      qdButton
+      color="secondary"
+      [disabled]="pending() || !rightPoint()._links?.moveLeft"
+      (click)="moveRightPointLeft()"
+      data-test-id="move-right-point-left"
+    >
+      Move left
+    </button>
+    <button
+      qdButton
+      color="secondary"
+      [disabled]="pending() || !rightPoint()._links?.moveRight"
+      (click)="moveRightPointRight()"
+      data-test-id="move-right-point-right"
+    >
+      Move right
+    </button>
+  </div>
 
   <qd-dialog-action>
-    <button qdButton color="secondary" (click)="onCancel()">Cancel</button>
-    <button qdButton [disabled]="form.invalid" (click)="onSubmit()" data-test-id="edit-submit-button">
-      Submit
-    </button>
+    <button qdButton (click)="onClose()" data-test-id="close-button">Close</button>
   </qd-dialog-action>
 </qd-dialog>

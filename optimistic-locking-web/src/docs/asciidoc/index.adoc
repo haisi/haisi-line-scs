@@ -53,6 +53,13 @@ image::images/overview.png[Lines overview,800]
 
 image::images/line-detail.png[Line details,800]
 
+Each point's move buttons in the dialog below are gated on that point's own `moveLeft`/`moveRight`
+hypermedia link (see <<reading-a-line>>), not a client-side re-implementation of the invariants in
+<<domain-invariants>> -- the same true server-computed visibility gate as the overview/detail pages
+above.
+
+image::images/move-dialog.png[Move point dialog,800]
+
 == Architecture
 
 The application is organised as two Spring Modulith application modules. `line` is the one bounded
@@ -85,11 +92,13 @@ Because a move only ever touches a child row, Hibernate would not otherwise bump
 version at all; `LineRepository.findForUpdate` loads the aggregate with
 `@Lock(OPTIMISTIC_FORCE_INCREMENT)` specifically to force that bump at commit.
 
+[[domain-invariants]]
 == Domain invariants
 
 `Line.moveLeft`/`Line.moveRight` enforce two invariants before touching either child, and expose
-the same checks as `canMoveLeft()`/`canMoveRight()` so the web layer can reflect them as hypermedia
-affordances (see <<reading-a-line>>):
+the same checks -- one method per point x direction (`canMoveLeftPointLeft()`,
+`canMoveLeftPointRight()`, `canMoveRightPointLeft()`, `canMoveRightPointRight()`) -- so the web
+layer can reflect them as hypermedia affordances on each embedded point (see <<reading-a-line>>):
 
 [cols="1,2,1", options="header"]
 |===
@@ -120,7 +129,7 @@ operation::move-left-update-budget-exhausted[snippets='http-request,http-respons
 NOTE: Both invariants return the same `422`; the response body doesn't distinguish which one
 fired, and this guide won't invent a schema it can't verify. What *is* observable, and reflected
 in <<reading-a-line, GET's hypermedia links>>, is that once either invariant would be violated, the
-corresponding `move-left`/`move-right` relation simply stops being offered.
+corresponding embedded point's `moveLeft`/`moveRight` relation simply stops being offered.
 
 == HTTP API
 
@@ -225,9 +234,13 @@ operation::create-line-conflict[snippets='http-request,http-response']
 
 operation::get-line[snippets='http-request,request-headers,response-headers,response-fields,links']
 
-The `move-left`/`move-right` links are present only while the corresponding move would currently
-succeed -- they disappear exactly when the invariants in the previous section would otherwise
-reject the write, so a well-behaved client never needs to guess.
+Each point (`leftPoint`/`rightPoint`) is its own embedded HAL resource under `_embedded`, carrying
+its own `moveLeft`/`moveRight` links -- present only while the corresponding move would currently
+succeed for *that* point and direction. They disappear exactly when the invariants in the previous
+section would otherwise reject the write, so a well-behaved client never needs to guess: the left
+point's `moveLeft` disappears once it reaches zero, `leftPoint.moveRight`/`rightPoint.moveLeft`
+disappear once the two points meet, and every link on both points disappears once the update
+budget is spent.
 
 A client holding a cached representation can make the request conditional with `If-None-Match`; if
 its entity-tag still matches, the server answers without a body:
@@ -236,7 +249,10 @@ operation::get-line-not-modified[snippets='request-headers,http-response']
 
 === Moving a point
 
-`PUT /lines/{id}/left` and `PUT /lines/{id}/right` are symmetric; only `left` is shown below.
+Each point can be moved in either direction: `PUT /lines/{id}/{left|right}/move-left` and
+`PUT /lines/{id}/{left|right}/move-right`. The URL fixes which point and which direction; the body
+still carries a positive magnitude to move by. All four combinations are symmetric; only
+`PUT /lines/{id}/left/move-right` is shown below.
 
 operation::move-left[snippets='http-request,path-parameters,request-headers,request-fields,http-response,response-headers,response-fields']
 
@@ -288,9 +304,9 @@ directly: eight requests race with no `If-Match` at all, exactly one succeeds, a
 resolves to either `409` or `412` depending on scheduling -- both are correct outcomes of the very
 same race.
 
-Every response that changes the resource's state -- `create`, `move-left`, `move-right` -- carries
-a fresh `ETag`, so a client always has what it needs to build its next `If-Match` without a
-separate `GET`.
+Every response that changes the resource's state -- `create` and any of the four point/direction
+move endpoints -- carries a fresh `ETag`, so a client always has what it needs to build its next
+`If-Match` without a separate `GET`.
 
 == Non-functional concern: idempotency
 

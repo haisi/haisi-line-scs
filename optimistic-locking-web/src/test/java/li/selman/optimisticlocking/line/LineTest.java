@@ -94,4 +94,61 @@ class LineTest {
             assertThat(line.can(new LineCommand.DeleteLine())).isTrue();
         }
     }
+
+    /**
+     * {@link Line#canMoveLeftPointLeft()} etc. back the {@code moveLeft}/{@code moveRight} links on
+     * each embedded point in {@code LineModelAssembler} -- one method per point x direction,
+     * covering the three business rules from the per-point move affordances feature.
+     */
+    @Nested
+    class CanDirectional {
+
+        @Test
+        void leftPointAtZero_cannotMoveLeft() {
+            Line line = LineFixture.newBuilder().line(0, 5).build();
+
+            assertThat(line.canMoveLeftPointLeft()).isFalse();
+            assertThat(line.canMoveLeftPointRight()).isTrue();
+        }
+
+        @Test
+        void leftAwayFromZero_canMoveLeft() {
+            Line line = LineFixture.newBuilder().line(2, 5).build();
+
+            assertThat(line.canMoveLeftPointLeft()).isTrue();
+        }
+
+        @Test
+        void leftEqualsRight_leftPointCannotMoveRight_andRightPointCannotMoveLeft() {
+            Line line = LineFixture.newBuilder().line(3, 3).build();
+
+            assertThat(line.canMoveLeftPointRight()).isFalse();
+            assertThat(line.canMoveRightPointLeft()).isFalse();
+            // unaffected: the tie only blocks the two directions that would cross the points
+            assertThat(line.canMoveLeftPointLeft()).isTrue();
+            assertThat(line.canMoveRightPointRight()).isTrue();
+        }
+
+        @Test
+        void leftBelowRight_bothPointsCanMoveTowardEachOther() {
+            Line line = LineFixture.newBuilder().line(1, 5).build();
+
+            assertThat(line.canMoveLeftPointRight()).isTrue();
+            assertThat(line.canMoveRightPointLeft()).isTrue();
+        }
+
+        @Test
+        void updateBudgetExhausted_noDirectionOnEitherPointIsAllowed() {
+            Line line = LineFixture.newBuilder()
+                    .line(3, 9)
+                    .leftUpdates(3)
+                    .rightUpdates(2)
+                    .build();
+
+            assertThat(line.canMoveLeftPointLeft()).isFalse();
+            assertThat(line.canMoveLeftPointRight()).isFalse();
+            assertThat(line.canMoveRightPointLeft()).isFalse();
+            assertThat(line.canMoveRightPointRight()).isFalse();
+        }
+    }
 }

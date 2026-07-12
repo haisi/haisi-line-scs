@@ -13,10 +13,11 @@ import org.springframework.web.bind.annotation.RestController;
  * Mints demo bearer tokens for the Angular app's identity switcher -- see {@link LocalDevAuthConfig}
  * for why this exists at all. Both demo identities hold {@code line_#read} for the fixed business
  * partner {@code acme} (matching {@code LineFixture}/{@code LocalDataSeeder}); only "administrator"
- * additionally holds {@code line_#delete} (a user role, making {@code LineRepresentationModelProcessor}
+ * additionally holds {@code line_#delete} (a user role, making {@code LineModelAssembler}
  * add a {@code delete} HATEOAS link) and {@code line_#create} for {@code acme} (a business-partner
- * role, making it add {@code move-left}/{@code move-right} links, per {@link LineAuthorization#canEdit}) --
- * the roles that make the delete and edit actions appear at all on a fetched {@code Line}.
+ * role, making it add {@code moveLeft}/{@code moveRight} links on each embedded point, per
+ * {@link LineAuthorization#canEdit}) -- the roles that make the delete and edit actions appear at
+ * all on a fetched {@code Line}.
  */
 @RestController
 @Profile("local")

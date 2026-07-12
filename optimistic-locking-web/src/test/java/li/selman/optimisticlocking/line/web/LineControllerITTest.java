@@ -163,6 +163,7 @@ class LineControllerITTest {
         jdbcTemplate.update("DELETE FROM line");
         jdbcTemplate.update("DELETE FROM left_point");
         jdbcTemplate.update("DELETE FROM right_point");
+        jdbcTemplate.update("DELETE FROM manual_operation");
     }
 
     private RestTestClient authedAs(String bearerToken) {
@@ -301,9 +302,9 @@ class LineControllerITTest {
                     .value(HttpHeaders.LOCATION, location -> assertThat(location)
                             .endsWith("/lines/" + id))
                     .expectBody()
-                    .jsonPath("$.left")
+                    .jsonPath("$._embedded.leftPoint.position")
                     .isEqualTo(1)
-                    .jsonPath("$.right")
+                    .jsonPath("$._embedded.rightPoint.position")
                     .isEqualTo(5);
 
             authedClient.get().uri("/lines/{id}", id).exchange().expectStatus().isOk();
@@ -369,9 +370,9 @@ class LineControllerITTest {
                     .uri("/lines/{id}", id)
                     .exchange()
                     .expectBody()
-                    .jsonPath("$.left")
+                    .jsonPath("$._embedded.leftPoint.position")
                     .isEqualTo(1)
-                    .jsonPath("$.right")
+                    .jsonPath("$._embedded.rightPoint.position")
                     .isEqualTo(5);
         }
 
@@ -411,7 +412,7 @@ class LineControllerITTest {
             // even though only the child LeftPoint row changes, the root's version bumps too
             authedClient
                     .put()
-                    .uri("/lines/{id}/left", id)
+                    .uri("/lines/{id}/left/move-right", id)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .body(new MoveRequest(2))
                     .exchange()
@@ -420,7 +421,7 @@ class LineControllerITTest {
                     .expectHeader()
                     .valueEquals(HttpHeaders.ETAG, "\"2\"")
                     .expectBody()
-                    .jsonPath("$.left")
+                    .jsonPath("$._embedded.leftPoint.position")
                     .isEqualTo(5);
         }
 
@@ -439,7 +440,7 @@ class LineControllerITTest {
 
             authedClient
                     .put()
-                    .uri("/lines/{id}/left", id)
+                    .uri("/lines/{id}/left/move-right", id)
                     .body(new MoveRequest(2))
                     .exchange()
                     .expectStatus()
@@ -462,7 +463,7 @@ class LineControllerITTest {
             // someone else's move lands first, bumping the version to "2"
             authedClient
                     .put()
-                    .uri("/lines/{id}/left", id)
+                    .uri("/lines/{id}/left/move-right", id)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .body(new MoveRequest(1))
                     .exchange()
@@ -472,7 +473,7 @@ class LineControllerITTest {
             // a stale tab retries against the version it originally read
             authedClient
                     .put()
-                    .uri("/lines/{id}/left", id)
+                    .uri("/lines/{id}/left/move-right", id)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .body(new MoveRequest(1))
                     .exchange()
@@ -495,7 +496,7 @@ class LineControllerITTest {
             // someone else's move lands first, bumping the version to "2"
             authedClient
                     .put()
-                    .uri("/lines/{id}/left", id)
+                    .uri("/lines/{id}/left/move-right", id)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .body(new MoveRequest(1))
                     .exchange()
@@ -505,7 +506,7 @@ class LineControllerITTest {
             // a client that never read the current version, but still wants "whatever it is now"
             authedClient
                     .put()
-                    .uri("/lines/{id}/left", id)
+                    .uri("/lines/{id}/left/move-right", id)
                     .header(HttpHeaders.IF_MATCH, "*")
                     .body(new MoveRequest(1))
                     .exchange()
@@ -528,7 +529,7 @@ class LineControllerITTest {
 
             authedClient
                     .put()
-                    .uri("/lines/{id}/left", id)
+                    .uri("/lines/{id}/left/move-right", id)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .body(new MoveRequest(2)) // 8 + 2 = 10 > 9
                     .exchange()
@@ -556,7 +557,7 @@ class LineControllerITTest {
 
             authedClient
                     .put()
-                    .uri("/lines/{id}/left", id)
+                    .uri("/lines/{id}/left/move-right", id)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .body(new MoveRequest(1))
                     .exchange()
@@ -581,7 +582,7 @@ class LineControllerITTest {
 
             authedClient
                     .put()
-                    .uri("/lines/{id}/left", id)
+                    .uri("/lines/{id}/left/move-right", id)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .header("Idempotency-Key", idempotencyKey)
                     .body(new MoveRequest(2))
@@ -594,7 +595,7 @@ class LineControllerITTest {
             // retry: same key, same (now stale) If-Match -- must replay, not re-apply or 412
             authedClient
                     .put()
-                    .uri("/lines/{id}/left", id)
+                    .uri("/lines/{id}/left/move-right", id)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .header("Idempotency-Key", idempotencyKey)
                     .body(new MoveRequest(2))
@@ -620,7 +621,7 @@ class LineControllerITTest {
 
             authedClient
                     .put()
-                    .uri("/lines/{id}/left", id)
+                    .uri("/lines/{id}/left/move-right", id)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .header("Idempotency-Key", idempotencyKey)
                     .body(new MoveRequest(2))
@@ -630,7 +631,7 @@ class LineControllerITTest {
 
             authedClient
                     .put()
-                    .uri("/lines/{id}/left", id)
+                    .uri("/lines/{id}/left/move-right", id)
                     .header(HttpHeaders.IF_MATCH, "\"2\"")
                     .header("Idempotency-Key", idempotencyKey)
                     .body(new MoveRequest(3)) // same key, different payload
@@ -665,7 +666,7 @@ class LineControllerITTest {
                         AtomicInteger status = new AtomicInteger();
                         authedClient
                                 .put()
-                                .uri("/lines/{id}/left", id)
+                                .uri("/lines/{id}/left/move-right", id)
                                 .header(HttpHeaders.IF_MATCH, "\"1\"")
                                 .body(new MoveRequest(1))
                                 .exchange()
@@ -701,8 +702,130 @@ class LineControllerITTest {
                     .uri("/lines/{id}", id)
                     .exchange()
                     .expectBody()
-                    .jsonPath("$.left")
+                    .jsonPath("$._embedded.leftPoint.position")
                     .isEqualTo(4);
+        }
+    }
+
+    /**
+     * {@code ManualOperation} is a generic audit trail (not move-specific), but today only
+     * {@code LineService.move} writes to it -- see {@code LineModelAssembler} for how it's
+     * embedded onto {@code GET /lines/{id}} as the {@code operations} relation.
+     */
+    @Nested
+    class OperationHistory {
+
+        @Test
+        void movingAPoint_recordsWhoMovedItAndByHowMuch() {
+            UUID id = UUID.randomUUID();
+            lineRepository.save(
+                    LineFixture.newBuilder().id(id).line(3, 9).lockVersion(1).build());
+
+            authedClient
+                    .put()
+                    .uri("/lines/{id}/left/move-right", id)
+                    .header(HttpHeaders.IF_MATCH, "\"1\"")
+                    .body(new MoveRequest(2))
+                    .exchange()
+                    .expectStatus()
+                    .isOk();
+
+            authedClient
+                    .get()
+                    .uri("/lines/{id}", id)
+                    .accept(MediaTypes.HAL_JSON)
+                    .exchange()
+                    .expectBody()
+                    .jsonPath("$._embedded.operations.length()")
+                    .isEqualTo(1)
+                    .jsonPath("$._embedded.operations[0].operation")
+                    .isEqualTo("MoveLeft")
+                    .jsonPath("$._embedded.operations[0].detail")
+                    .value(String.class, detail -> assertThat(detail).contains("left").contains("2"))
+                    .jsonPath("$._embedded.operations[0].performedBy")
+                    .isEqualTo("test-subject")
+                    .jsonPath("$._embedded.operations[0].performedAt")
+                    .exists();
+        }
+
+        /**
+         * Mirrors {@link PutMove#retryingWithSameIdempotencyKey_isANoOp}: a recognised
+         * Idempotency-Key replay reports the same logical move again, so it must not append a
+         * second audit entry.
+         */
+        @Test
+        void idempotentReplay_doesNotDuplicateTheOperationRecord() {
+            UUID id = UUID.randomUUID();
+            lineRepository.save(
+                    LineFixture.newBuilder().id(id).line(3, 9).lockVersion(1).build());
+            String idempotencyKey = UUID.randomUUID().toString();
+
+            authedClient
+                    .put()
+                    .uri("/lines/{id}/left/move-right", id)
+                    .header(HttpHeaders.IF_MATCH, "\"1\"")
+                    .header("Idempotency-Key", idempotencyKey)
+                    .body(new MoveRequest(2))
+                    .exchange()
+                    .expectStatus()
+                    .isOk();
+
+            authedClient
+                    .put()
+                    .uri("/lines/{id}/left/move-right", id)
+                    .header(HttpHeaders.IF_MATCH, "\"1\"")
+                    .header("Idempotency-Key", idempotencyKey)
+                    .body(new MoveRequest(2))
+                    .exchange()
+                    .expectStatus()
+                    .isOk();
+
+            authedClient
+                    .get()
+                    .uri("/lines/{id}", id)
+                    .accept(MediaTypes.HAL_JSON)
+                    .exchange()
+                    .expectBody()
+                    .jsonPath("$._embedded.operations.length()")
+                    .isEqualTo(1);
+        }
+
+        @Test
+        void multipleMoves_accumulateInOrder() {
+            UUID id = UUID.randomUUID();
+            lineRepository.save(
+                    LineFixture.newBuilder().id(id).line(3, 9).lockVersion(1).build());
+
+            authedClient
+                    .put()
+                    .uri("/lines/{id}/left/move-right", id)
+                    .header(HttpHeaders.IF_MATCH, "\"1\"")
+                    .body(new MoveRequest(1))
+                    .exchange()
+                    .expectStatus()
+                    .isOk();
+
+            authedClient
+                    .put()
+                    .uri("/lines/{id}/right/move-right", id)
+                    .header(HttpHeaders.IF_MATCH, "\"2\"")
+                    .body(new MoveRequest(1))
+                    .exchange()
+                    .expectStatus()
+                    .isOk();
+
+            authedClient
+                    .get()
+                    .uri("/lines/{id}", id)
+                    .accept(MediaTypes.HAL_JSON)
+                    .exchange()
+                    .expectBody()
+                    .jsonPath("$._embedded.operations.length()")
+                    .isEqualTo(2)
+                    .jsonPath("$._embedded.operations[0].operation")
+                    .isEqualTo("MoveLeft")
+                    .jsonPath("$._embedded.operations[1].operation")
+                    .isEqualTo("MoveRight");
         }
     }
 
@@ -722,7 +845,7 @@ class LineControllerITTest {
 
             authedClient
                     .put()
-                    .uri("/lines/{id}/left", id)
+                    .uri("/lines/{id}/left/move-right", id)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .body(new MoveRequest(1))
                     .exchange()
@@ -748,9 +871,9 @@ class LineControllerITTest {
 
             authedClient
                     .put()
-                    .uri("/lines/{id}/left", id)
+                    .uri("/lines/{id}/left/move-left", id)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
-                    .body(new MoveRequest(-1))
+                    .body(new MoveRequest(1))
                     .exchange()
                     .expectStatus()
                     .isEqualTo(422)
@@ -779,7 +902,7 @@ class LineControllerITTest {
 
             authedClient
                     .put()
-                    .uri("/lines/{id}/left", id)
+                    .uri("/lines/{id}/left/move-right", id)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .body(Map.of("by", "not-a-number"))
                     .exchange()
@@ -918,7 +1041,8 @@ class LineControllerITTest {
         /**
          * Not governed by RFC 9110 directly -- this is a hypermedia affordance (HAL {@code _links})
          * reflecting the domain invariant enforced in {@code Line.moveLeft}, rather than raw HTTP
-         * semantics.
+         * semantics. Each point is now its own embedded sub-resource, so the affordance lives at
+         * {@code $._embedded.leftPoint._links.moveLeft}, not a top-level relation.
          */
         @Test
         void ifLeftPointAtZero_thenMovingLeftRelationUnavailable() {
@@ -935,7 +1059,7 @@ class LineControllerITTest {
                     .expectStatus()
                     .isOk()
                     .expectBody()
-                    .jsonPath("$._links.move-left")
+                    .jsonPath("$._embedded.leftPoint._links.moveLeft")
                     .doesNotExist();
 
             // given: a line whose left point has room to move
@@ -952,9 +1076,39 @@ class LineControllerITTest {
                     .expectStatus()
                     .isOk()
                     .expectBody()
-                    .jsonPath("$._links.move-left")
+                    .jsonPath("$._embedded.leftPoint._links.moveLeft")
                     .exists()
-                    .jsonPath("$._links.move-right")
+                    .jsonPath("$._embedded.leftPoint._links.moveRight")
+                    .exists();
+        }
+
+        /**
+         * Same as {@link #ifLeftPointAtZero_thenMovingLeftRelationUnavailable} -- a hypermedia
+         * affordance, not raw RFC 9110 mechanics. The left point sitting exactly on the right point
+         * blocks only the two directions that would cross them: the left point can't move further
+         * right, and the right point can't move further left.
+         */
+        @Test
+        void ifLeftEqualsRight_thenCrossingRelationsUnavailable() {
+            UUID id = UUID.randomUUID();
+            lineRepository.save(LineFixture.newBuilder().id(id).line(3, 3).build());
+
+            authedClient
+                    .get()
+                    .uri("/lines/{id}", id)
+                    .accept(MediaTypes.HAL_JSON)
+                    .exchange()
+                    .expectStatus()
+                    .isOk()
+                    .expectBody()
+                    .jsonPath("$._embedded.leftPoint._links.moveRight")
+                    .doesNotExist()
+                    .jsonPath("$._embedded.rightPoint._links.moveLeft")
+                    .doesNotExist()
+                    // unaffected: the tie only blocks the two directions that would cross the points
+                    .jsonPath("$._embedded.leftPoint._links.moveLeft")
+                    .exists()
+                    .jsonPath("$._embedded.rightPoint._links.moveRight")
                     .exists();
         }
 
@@ -980,9 +1134,13 @@ class LineControllerITTest {
                     .expectStatus()
                     .isOk()
                     .expectBody()
-                    .jsonPath("$._links.move-left")
+                    .jsonPath("$._embedded.leftPoint._links.moveLeft")
                     .doesNotExist()
-                    .jsonPath("$._links.move-right")
+                    .jsonPath("$._embedded.leftPoint._links.moveRight")
+                    .doesNotExist()
+                    .jsonPath("$._embedded.rightPoint._links.moveLeft")
+                    .doesNotExist()
+                    .jsonPath("$._embedded.rightPoint._links.moveRight")
                     .doesNotExist();
         }
 
@@ -1149,7 +1307,7 @@ class LineControllerITTest {
 
             authedAs(tokenFor(OTHER_BUSINESS_PARTNER_ID, LINE_CREATE))
                     .put()
-                    .uri("/lines/{id}/left", id)
+                    .uri("/lines/{id}/left/move-right", id)
                     .header("X-Partner-Id", OTHER_BUSINESS_PARTNER_ID)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .body(new MoveRequest(1))
@@ -1324,7 +1482,7 @@ class LineControllerITTest {
 
             authedAs(TOKEN_COOP_EMPLOYEE)
                     .put()
-                    .uri("/lines/{id}/left", id)
+                    .uri("/lines/{id}/left/move-right", id)
                     .header("X-Partner-Id", BP_ID_COOP_JUMBO)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .body(new MoveRequest(1))
@@ -1364,7 +1522,7 @@ class LineControllerITTest {
 
             authedAs(TOKEN_COOP_EMPLOYEE)
                     .put()
-                    .uri("/lines/{id}/left", id)
+                    .uri("/lines/{id}/left/move-right", id)
                     .header("X-Partner-Id", BP_ID_COOP_PRONTO)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .body(new MoveRequest(1))
@@ -1471,7 +1629,7 @@ class LineControllerITTest {
 
             authedAs(TOKEN_MGB_EMPLOYEE)
                     .put()
-                    .uri("/lines/{id}/left", dennerLine)
+                    .uri("/lines/{id}/left/move-right", dennerLine)
                     .header("X-Partner-Id", BP_ID_MGB_DENNER)
                     .header(HttpHeaders.IF_MATCH, "\"1\"")
                     .body(new MoveRequest(1))

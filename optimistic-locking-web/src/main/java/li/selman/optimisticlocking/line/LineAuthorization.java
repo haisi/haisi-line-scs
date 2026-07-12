@@ -68,6 +68,11 @@ public class LineAuthorization {
         }
     }
 
+    /** The caller's JWT subject -- used to attribute a {@code ManualOperation} to whoever performed it. */
+    public String currentSubject() {
+        return authorization.getAuthenticationToken().getTokenSubject();
+    }
+
     /**
      * True if the caller holds any of the {@code line} roles for this line's owning business
      * partner -- deliberately not restricted to {@code READ_ROLE}, since holding e.g. only

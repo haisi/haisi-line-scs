@@ -18,5 +18,38 @@
         </qd-horizontal-pairs>
       </qd-section>
     }
+
+    <!-- Split into its own @if (rather than sharing the block above): Angular's content
+         projection into qd-page's "qd-section" slot can't reliably handle more than one
+         projectable root node coming out of a single conditional block (NG8011). -->
+    @if (line(); as line) {
+      <qd-section>
+        <h3>Activity</h3>
+        @if (line.operations.length === 0) {
+          <p data-test-id="activity-empty">No activity yet.</p>
+        } @else {
+          <table data-test-id="activity-table">
+            <thead>
+              <tr>
+                <th>Operation</th>
+                <th>Detail</th>
+                <th>Performed by</th>
+                <th>Performed at</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (operation of line.operations; track $index) {
+                <tr>
+                  <td>{{ operation.operation }}</td>
+                  <td>{{ operation.detail }}</td>
+                  <td>{{ operation.performedBy }}</td>
+                  <td>{{ operation.performedAt | date: 'medium' }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+      </qd-section>
+    }
   </qd-page>
 }

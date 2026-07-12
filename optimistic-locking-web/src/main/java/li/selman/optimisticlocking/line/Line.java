@@ -63,6 +63,14 @@ public class Line implements AggregateRoot<Line, LineId> {
         return right.getPosition();
     }
 
+    public LeftPoint getLeftPoint() {
+        return left;
+    }
+
+    public RightPoint getRightPoint() {
+        return right;
+    }
+
     public String getBusinessPartnerId() {
         return businessPartnerId;
     }
@@ -91,15 +99,18 @@ public class Line implements AggregateRoot<Line, LineId> {
      * Determines whether the <b>typ of command</b> would be allowed.
      * Important, if the user tries to actually execute the command, you must still <b>check the content of the command</b>.
      * At view time these values are not available yet!
+     *
+     * <p>{@code MoveLeft}/{@code MoveRight} can each move their point in either direction (see
+     * {@code LineCommand}), so the only thing knowable without the command's content is the shared
+     * update budget -- position bounds (e.g. the left point not going below zero) depend on the
+     * actual {@code by} and are only checked by {@link #can(LineCommand)}'s content-aware switch.
      */
     public boolean can(Class<? extends LineCommand> commandType) {
         if (commandType == LineCommand.CreateLine.class) {
             return true;
         } else if (commandType == LineCommand.DeleteLine.class) {
             return true; // no business invariant blocks a delete; line_#delete is enforced in the web layer
-        } else if (commandType == LineCommand.MoveLeft.class) {
-            return left.getPosition() > 0 && totalUpdates() < MAX_UPDATES;
-        } else if (commandType == LineCommand.MoveRight.class) {
+        } else if (commandType == LineCommand.MoveLeft.class || commandType == LineCommand.MoveRight.class) {
             return totalUpdates() < MAX_UPDATES;
         }
         throw new IllegalStateException("No 'can' check for " + commandType);
@@ -139,5 +150,27 @@ public class Line implements AggregateRoot<Line, LineId> {
     private boolean canMoveRightBy(int by) {
         int newRight = right.getPosition() + by;
         return left.getPosition() <= newRight && totalUpdates() < MAX_UPDATES;
+    }
+
+    /**
+     * Per-point, per-direction affordance checks for the web layer's {@code moveLeft}/{@code
+     * moveRight} links on each embedded point (see {@code LineModelAssembler}). Each reuses the
+     * same bounds as the real move validation, evaluated for a representative single-unit step --
+     * the actual client-supplied magnitude is re-validated for real at move time regardless.
+     */
+    public boolean canMoveLeftPointLeft() {
+        return canMoveLeftBy(-1);
+    }
+
+    public boolean canMoveLeftPointRight() {
+        return canMoveLeftBy(1);
+    }
+
+    public boolean canMoveRightPointLeft() {
+        return canMoveRightBy(-1);
+    }
+
+    public boolean canMoveRightPointRight() {
+        return canMoveRightBy(1);
     }
 }

@@ -1,3 +1,4 @@
+import { DatePipe } from '@angular/common';
 import { Component, computed, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -25,7 +26,7 @@ function requireRouteId(route: ActivatedRoute): string {
 
 @Component({
   selector: 'app-line-detail',
-  imports: [QdPageModule, QdSectionModule, QdListModule],
+  imports: [QdPageModule, QdSectionModule, QdListModule, DatePipe],
   templateUrl: './line-detail.component.html',
 })
 export class LineDetailComponent {
@@ -67,21 +68,30 @@ export class LineDetailComponent {
     if (!result) {
       return null;
     }
+    const { leftPoint, rightPoint, operations } = result.line._embedded;
     return {
-      left: result.line.left,
-      right: result.line.right,
+      left: leftPoint.position,
+      right: rightPoint.position,
       businessPartnerId: result.line.businessPartnerId,
+      operations,
       canDelete: !!result.line._links.delete,
-      canEdit: !!(result.line._links['move-left'] ?? result.line._links['move-right']),
+      // "all moves used up" (see edit-line-dialog) means none of the four per-point/direction
+      // links are offered -- the whole Edit action disappears in that case, not just one button.
+      canEdit: !!(
+        leftPoint._links?.moveLeft ??
+        leftPoint._links?.moveRight ??
+        rightPoint._links?.moveLeft ??
+        rightPoint._links?.moveRight
+      ),
     };
   });
 
   /**
    * `pageTypeConfig.delete`/`customActions` are only included when the fetched Line actually
-   * carries the matching HATEOAS link (`delete`, or either of `move-left`/`move-right`) -- the
+   * carries the matching HATEOAS link (`delete`, or any of the four per-point move links) -- the
    * backend only adds those when the caller holds the matching role for this specific line (see
-   * LineRepresentationModelProcessor). Omitting the key entirely, rather than disabling a button,
-   * is what makes qd-page's own actions disappear -- a real server-computed visibility gate.
+   * LineModelAssembler). Omitting the key entirely, rather than disabling a button, is what makes
+   * qd-page's own actions disappear -- a real server-computed visibility gate.
    */
   readonly pageConfig = computed<QdPageConfig | null>(() => {
     const line = this.line();
@@ -132,16 +142,17 @@ export class LineDetailComponent {
     if (!current) {
       return;
     }
+    // Unlike the old single-submit dialog, every button click inside EditLineDialogComponent
+    // already mutates server state immediately -- there's no "was anything edited" result to
+    // check, so this always refreshes (a harmless extra GET if nothing was actually moved).
     this.dialogService
       .open(EditLineDialogComponent, {
         title: { i18n: 'i18n.lines.detail.editDialog.title' },
         dialogSize: QdDialogSize.Small,
         data: { line: current.line, etag: current.etag },
       })
-      .closed.subscribe((wasEdited) => {
-        if (wasEdited) {
-          this.refresh.next();
-        }
+      .closed.subscribe(() => {
+        this.refresh.next();
       });
   }
 

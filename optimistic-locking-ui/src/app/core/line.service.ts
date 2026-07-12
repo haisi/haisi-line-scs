@@ -31,21 +31,31 @@ export class LineService {
   }
 
   /**
-   * `by` is a delta relative to the point's *current* position, not the new absolute value --
-   * mirroring `Line.moveLeft`/`LineCommand.MoveLeft` on the backend. No `Idempotency-Key` is sent:
-   * the backend treats a reused key with a different `by` as a 422 (`IdempotencyKeyReused`), which
-   * would misfire if a user corrects a rejected value and resubmits from the same dialog session.
+   * `by` is always a positive magnitude now -- the URL (which point, move-left/move-right) fixes
+   * the direction, mirroring `LineController`'s four move endpoints on the backend. No
+   * `Idempotency-Key` is sent: the backend treats a reused key with a different `by` as a 422
+   * (`IdempotencyKeyReused`), which would misfire if a user corrects a rejected value and
+   * resubmits from the same dialog session.
    */
-  moveLeft(id: string, etag: string, by: number): Observable<LineWithETag> {
+  private move(id: string, path: string, etag: string, by: number): Observable<LineWithETag> {
     return this.http
-      .put<Line>(`/lines/${id}/left`, { by }, { headers: { 'If-Match': etag }, observe: 'response' })
+      .put<Line>(`/lines/${id}/${path}`, { by }, { headers: { 'If-Match': etag }, observe: 'response' })
       .pipe(map((response) => toLineWithETag(response)));
   }
 
-  /** See {@link moveLeft} for why `by` is a delta and no `Idempotency-Key` is sent. */
-  moveRight(id: string, etag: string, by: number): Observable<LineWithETag> {
-    return this.http
-      .put<Line>(`/lines/${id}/right`, { by }, { headers: { 'If-Match': etag }, observe: 'response' })
-      .pipe(map((response) => toLineWithETag(response)));
+  moveLeftPointLeft(id: string, etag: string, by: number): Observable<LineWithETag> {
+    return this.move(id, 'left/move-left', etag, by);
+  }
+
+  moveLeftPointRight(id: string, etag: string, by: number): Observable<LineWithETag> {
+    return this.move(id, 'left/move-right', etag, by);
+  }
+
+  moveRightPointLeft(id: string, etag: string, by: number): Observable<LineWithETag> {
+    return this.move(id, 'right/move-left', etag, by);
+  }
+
+  moveRightPointRight(id: string, etag: string, by: number): Observable<LineWithETag> {
+    return this.move(id, 'right/move-right', etag, by);
   }
 }

@@ -19,4 +19,15 @@ rm -rf "$ui_dir/dist/test-out"
 (cd "$ui_dir" && npm test -- --watch=false)
 
 mkdir -p "$images_dir"
-cp "$(find "$ui_dir/dist/test-out" -path '*/__screenshots__/*' -name '*.png')" "$images_dir/line-detail.png"
+
+# One subdirectory of __screenshots__/ per spec file (e.g.
+# spec-app-lines-line-detail-line-detail.component.spec.js/), each holding that spec's own
+# page.screenshot() output -- map each to the doc image name index.adoc expects.
+screenshots_dir="$(find "$ui_dir/dist/test-out" -type d -name '__screenshots__')"
+copy_screenshot() {
+  local spec_dir_glob="$1" dest_name="$2"
+  # shellcheck disable=SC2086 # glob must expand unquoted to match the single spec directory
+  cp "$(find "$screenshots_dir" -type d -name $spec_dir_glob)"/*.png "$images_dir/$dest_name"
+}
+copy_screenshot '*-line-detail.component.spec.js' 'line-detail.png'
+copy_screenshot '*-edit-line-dialog.component.spec.js' 'move-dialog.png'

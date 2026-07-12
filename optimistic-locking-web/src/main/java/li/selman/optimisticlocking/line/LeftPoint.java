@@ -38,11 +38,15 @@ public class LeftPoint {
         numberOfUpdates++;
     }
 
-    int getPosition() {
+    public Long getId() {
+        return id;
+    }
+
+    public int getPosition() {
         return position;
     }
 
-    int getNumberOfUpdates() {
+    public int getNumberOfUpdates() {
         return numberOfUpdates;
     }
 }
