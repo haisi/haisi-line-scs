@@ -472,15 +472,25 @@
 
             <plugin>
                 <!--
-                Screenshots the Angular frontend's Lines overview page into
-                generated-docs.directory/images, so index.adoc can embed it (see the "Web UI"
-                section) and it rides along with everything else asciidoctor-maven-plugin below
-                already copies out. take-overview-screenshot.sh boots a real instance of the app to
-                screenshot against, using the classpath file the maven-dependency-plugin execution
-                above just wrote, then tears it down again, all within this one execution, so
-                there's no second plugin execution of the same kind for Maven to potentially
-                reorder; declared here, before the asciidoctor-maven-plugin execution below, so the
-                image exists in time to be embedded.
+                Screenshots frontend pages/components into generated-docs.directory/images, so
+                index.adoc can embed them (see the "Web UI" section) and they ride along with
+                everything else asciidoctor-maven-plugin below already copies out. Both executions
+                are independent of each other (order between them doesn't matter), but both must
+                run before that asciidoctor-maven-plugin execution, which is declared below them
+                for exactly that reason.
+
+                take-overview-screenshot.sh boots a real instance of this app to screenshot
+                against (using the classpath file the maven-dependency-plugin execution above just
+                wrote), then tears it down again, deliberately exercising the real, running
+                integration, all within this one execution so there's no second execution of the
+                same goal for Maven to potentially reorder relative to it.
+
+                screenshot-components.mjs takes the opposite approach for everything else: no
+                backend, no JVM at all; it serves optimistic-locking-ui's already-built static
+                assets itself and mocks whatever HTTP calls each page/component makes via
+                Playwright's own request interception. Add more pages/components to screenshot this
+                way by editing the `specs` array in that script, not by adding another execution
+                here.
                 -->
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
@@ -494,6 +504,20 @@
                         <phase>prepare-package</phase>
                         <configuration>
                             <executable>${project.basedir}/take-overview-screenshot.sh</executable>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>take-component-screenshots</id>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <phase>prepare-package</phase>
+                        <configuration>
+                            <executable>node</executable>
+                            <arguments>
+                                <argument>${project.basedir}/../optimistic-locking-ui/scripts/screenshot-components.mjs</argument>
+                                <argument>--out-dir=${generated-docs.directory}/images</argument>
+                            </arguments>
                         </configuration>
                     </execution>
                 </executions>

@@ -44,11 +44,14 @@ behaviour ever disagree, the build fails before either does.
 `optimistic-locking-ui` is an Angular frontend for the API below, built on
 `@quadrel-enterprise-ui/framework`. It lists every `Line`, shows a line's details, and gates its
 delete action on the fetched resource's own `delete` hypermedia link being present (see
-<<reading-a-line>>) rather than re-implementing that permission check client-side. The screenshot
-below is taken fresh on every build, straight from a running instance of the app, so it can't drift
-out of sync with the actual UI.
+<<reading-a-line>>) rather than re-implementing that permission check client-side. The screenshots
+below are taken fresh on every build, so they can't drift out of sync with the actual UI: the
+overview against a real running instance of the app, the detail page against the built frontend
+alone, with its one HTTP call mocked, no backend involved.
 
 image::images/overview.png[Lines overview,800]
+
+image::images/line-detail.png[Line details,800]
 
 == Architecture
 
