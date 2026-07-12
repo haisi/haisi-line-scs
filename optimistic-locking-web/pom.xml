@@ -1,0 +1,518 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>li.selman</groupId>
+        <artifactId>optimistic-locking</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </parent>
+    <artifactId>optimistic-locking-web</artifactId>
+    <name>optimistic-locking-web</name>
+    <description>optimistic-locking</description>
+    <properties>
+        <asciidoctor-maven-plugin.version>3.0.0</asciidoctor-maven-plugin.version>
+        <asciidoctorj-diagram.version>2.3.0</asciidoctorj-diagram.version>
+        <error-prone-core.version>2.50.0</error-prone-core.version>
+        <!-- Properties using which additional Error Prone flags can be specified. -->
+        <error-prone.patch-args/>
+        <generated-docs.directory>${project.build.directory}/generated-docs</generated-docs.directory>
+        <generated-snippets.directory>${project.build.directory}/generated-snippets</generated-snippets.directory>
+        <java.version>25</java.version>
+        <modulith-docs.directory>${project.build.directory}/spring-modulith-docs</modulith-docs.directory>
+        <nullaway.version>0.13.7</nullaway.version>
+        <!-- Build-time-only Asciidoctor extension; not yet released to track spring-restdocs-core's
+        (Boot-managed) 4.0.1, so pinned independently. -->
+        <spring-restdocs-asciidoctor.version>3.0.1</spring-restdocs-asciidoctor.version>
+    </properties>
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.modulith</groupId>
+                <artifactId>spring-modulith-bom</artifactId>
+                <version>2.1.0</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+    <dependencies>
+
+        <dependency>
+            <groupId>ch.admin.bit.jeap</groupId>
+            <artifactId>jeap-spring-boot-application-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>ch.admin.bit.jeap</groupId>
+            <artifactId>jeap-spring-boot-security-starter</artifactId>
+        </dependency>
+
+        <dependency>
+            <!-- Provides annotations such as @Var to tell error-prone something is non-constant -->
+            <groupId>com.google.errorprone</groupId>
+            <artifactId>error_prone_annotations</artifactId>
+            <version>${error-prone-core.version}</version>
+            <scope>compile</scope>
+        </dependency>
+
+        <dependency>
+            <!-- Provides @io.github.adr.linked.ADR, letting code reference the Architecture
+            Decision Records under docs/adr/ (see https://github.com/adr/e-adr). -->
+            <groupId>io.github.adr</groupId>
+            <artifactId>e-adr</artifactId>
+            <version>2.0.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.jmolecules</groupId>
+            <artifactId>jmolecules-ddd</artifactId>
+            <version>2.0.1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.jmolecules</groupId>
+            <artifactId>jmolecules-onion-architecture</artifactId>
+            <version>2.0.1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.jmolecules.integrations</groupId>
+            <artifactId>jmolecules-jackson3</artifactId>
+            <version>0.33.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.jmolecules.integrations</groupId>
+            <artifactId>jmolecules-spring</artifactId>
+            <version>0.33.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-hateoas</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.modulith</groupId>
+            <artifactId>spring-modulith-api</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>ch.admin.bit.jeap</groupId>
+            <artifactId>jeap-spring-boot-security-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <version>1.4.2</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>li.selman</groupId>
+            <artifactId>null-markeder</artifactId>
+            <version>1.0.0</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.jmolecules.integrations</groupId>
+            <artifactId>jmolecules-archunit</artifactId>
+            <version>0.33.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-hateoas-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.modulith</groupId>
+            <artifactId>spring-modulith-docs</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.modulith</groupId>
+            <artifactId>spring-modulith-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.restdocs</groupId>
+            <artifactId>spring-restdocs-mockmvc</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+
+            <plugin>
+                <!--
+                - Code formatter verifying and applying the palantir-java-format.
+                - Runs as part of the verify phase.
+                - Apart from spotless:check, the plugin can also auto format the code using 'mvn spotless:apply'
+                - Install the IntelliJ plugin and configure your IntelliJ JRE Config
+                https://plugins.jetbrains.com/plugin/13180-palantir-java-format
+                - IJ > Settings > "palantir java format settings" > enable
+
+                See for more infos: https://github.com/palantir/palantir-java-format
+                -->
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <version>3.8.0</version>
+                <configuration>
+                    <java>
+                        <!-- https://github.com/diffplug/spotless/tree/main/plugin-maven#java -->
+                        <palantirJavaFormat>
+                            <style>PALANTIR</style>
+                        </palantirJavaFormat>
+                        <removeUnusedImports/>
+                        <!-- self-explanatory -->
+                        <formatAnnotations/>
+                        <!-- fixes formatting of type annotations, see below -->
+                    </java>
+                    <pom>
+                        <!-- https://github.com/diffplug/spotless/tree/main/plugin-maven#maven-pom -->
+                        <sortPom>
+                            <!-- https://github.com/Ekryd/sortpom/wiki/Parameters -->
+                            <nrOfIndentSpace>4</nrOfIndentSpace>
+                            <encoding>${project.build.sourceEncoding}</encoding>
+                            <predefinedSortOrder>recommended_2008_06</predefinedSortOrder>
+                            <sortDependencies>scope,groupId,artifactId</sortDependencies>
+                            <sortDependencyExclusions>groupId,artifactId</sortDependencyExclusions>
+                            <sortModules>true</sortModules>
+                            <sortPlugins>groupId,artifactId</sortPlugins>
+                            <!-- Sorts Maven pom properties alphabetically.
+                            Affects both project/properties and project/profiles/profile/properties. -->
+                            <sortProperties>true</sortProperties>
+                        </sortPom>
+                    </pom>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-checkstyle-plugin</artifactId>
+                <version>3.6.0</version>
+                <configuration>
+                    <checkstyleRules>
+                        <module name="Checker">
+                            <!-- We only enable rules that are not enforced by
+                            Error Prone or automatically corrected through
+                            application of google-java-format (GJF). -->
+                            <module name="TreeWalker">
+                                <module name="IllegalImport">
+                                    <!-- illegalClasses takes a single comma-separated list; with regexp=true
+                                    each entry is matched as a regular expression against the import. -->
+                                    <property name="regexp" value="true"/>
+                                    <property name="illegalClasses" value="                                         org\.jetbrains\.annotations\.CheckReturnValue,                                         org\.jetbrains\.annotations\.VisibleForTesting,                                         io\.micrometer\.core\.lang\.Nullable,                                         javax\.annotation\.Nullable,                                         org\.springframework\.lang\.Nullable,                                         org\.testng\.AssertJUnit(\..*?)?">
+                                        <!-- Instead, please use, respectively:
+                                        `com.google.errorprone.annotations.CheckReturnValue`,
+                                        `com.google.common.annotations.VisibleForTesting`,
+                                        `org.jspecify.annotations.Nullable` (x3),
+                                        `org.assertj.core.api.Assertions`. -->
+                                    </property>
+                                </module>
+                            </module>
+                        </module>
+                    </checkstyleRules>
+                    <excludeGeneratedSources>true</excludeGeneratedSources>
+                    <failOnViolation>true</failOnViolation>
+                    <includeTestSourceDirectory>true</includeTestSourceDirectory>
+                    <resourceIncludes>**/*</resourceIncludes>
+                </configuration>
+                <dependencies>
+                    <dependency>
+                        <groupId>com.puppycrawl.tools</groupId>
+                        <artifactId>checkstyle</artifactId>
+                        <version>10.26.1</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>io.spring.nohttp</groupId>
+                        <artifactId>nohttp-checkstyle</artifactId>
+                        <version>0.0.11</version>
+                    </dependency>
+                </dependencies>
+                <executions>
+                    <execution>
+                        <id>run-checkstyle</id>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <encoding>UTF-8</encoding>
+                    <compilerArgs combine.children="append">
+                        <!-- https://docs.oracle.com/en/java/javase/21/docs/specs/man/javac.html -->
+                        <!--
+                        Enable all warnings
+                        We turn off:
+                        - 'serial' because we don't use Java serialization (and all it does is complain about the serialVersionUID)
+                        - 'processing' because it complains about every annotation
+                        -->
+                        <arg>-Xlint:all,-serial,-processing,-varargs</arg>
+                        <!-- Terminate compilation when *warnings* occur -->
+                        <arg>-Werror</arg>
+
+                        <!--
+                        Error Prone Config: https://errorprone.info/docs/flags
+                        Mainly based on: https://github.com/PicnicSupermarket/error-prone-support/blob/master/pom.xml
+                        -->
+                        <arg>
+                            -Xplugin:ErrorProne -Xep:Var:ERROR -Xep:StringSplitter:OFF
+                            <!--
+                            NullAway Configs
+                            https://github.com/uber/NullAway/wiki/Configuration
+                            -->
+                            -XepOpt:NullAway:AnnotatedPackages=li.selman.optimisticlocking
+                            <!--
+                            Calling .get() on an Optional value that hasn't been previously tested with Optional.isPresent(...)
+                            will result in an error.
+                            https://github.com/uber/NullAway/wiki/Configuration#optional-emptiness-check
+                            -->
+                            -XepOpt:NullAway:CheckOptionalEmptiness=true
+
+                            -XepOpt:IdentifierName:AllowInitialismsInTypeName=true
+                            -XepOpt:InlineMe:SkipInliningsWithComments=false
+                            <!-- https://github.com/google/error-prone/issues/2910 -->
+                            -XepOpt:Nullness:Conservative=false
+                            <!-- We don't target JDK 8. -->
+                            -Xep:Java8ApiChecker:OFF
+                            <!-- We don't target Android. -->
+                            -Xep:StaticOrDefaultInterfaceMethod:OFF
+                            <!-- We generally discourage `var` use. -->
+                            -Xep:Varifier:OFF
+                            <!-- Yoda conditions are not always more readable than the alternative. -->
+                            -Xep:YodaCondition:OFF
+                            -XepOpt:CheckReturnValue:CheckAllConstructors=true
+                            <!-- Append additional custom arguments. -->
+                            ${error-prone.patch-args}
+                            ${error-prone.self-check-args}
+                        </arg>
+                        <!--
+                        The Error Prone plugin makes certain
+                        assumptions about the state of the AST at the
+                        moment it is invoked. Those assumptions require
+                        the `simple` compile policy. This flag may be
+                        dropped after resolution of
+                        https://bugs.openjdk.java.net/browse/JDK-8155674.
+                         -->
+                        <arg>-XDcompilePolicy=simple</arg>
+                        <!--
+                        Similarly, Error Prone requires that flow
+                        analysis has been performed, e.g. to determine
+                        whether variables are effectively final. This
+                        flag may be dropped if it ever becomes the
+                        default. See
+                        https://bugs.openjdk.org/browse/JDK-8134117.
+                        -->
+                        <arg>--should-stop=ifError=FLOW</arg>
+                    </compilerArgs>
+                    <annotationProcessorPaths>
+                        <!--
+                        - Analyses AST to spot bugs: https://errorprone.info/bugpatterns
+                            - Can be extended with custom or third-party bug patterns: https://error-prone.picnic.tech/
+                        - Can automatically patch code not matching a patter
+                            - Can be extended with custom or third-part patchers
+
+                        - Install IJ plugin: https://plugins.jetbrains.com/plugin/7349-error-prone-compiler
+                            - Configure Settings | Compiler | Java Compiler | Use compiler: Javac with error-prone
+                            - make sure Settings | Compiler | Use external build is NOT selected.
+                        -->
+                        <path>
+                            <groupId>com.google.errorprone</groupId>
+                            <artifactId>error_prone_core</artifactId>
+                            <version>${error-prone-core.version}</version>
+                        </path>
+                        <!--
+                        - Helps eliminate NullPointerExceptions
+                        - Requires error prone
+                        See for more: https://github.com/uber/NullAway/wiki
+                        -->
+                        <path>
+                            <groupId>com.uber.nullaway</groupId>
+                            <artifactId>nullaway</artifactId>
+                            <version>${nullaway.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <!--
+                jeap-spring-boot-parent already manages this plugin and registers its "agent"
+                execution (prepare-agent/prepare-agent-integration, bound to their default phases),
+                so simply activating the plugin here is enough to instrument test runs. The "report"
+                execution added below renders the resulting coverage data as HTML directly into
+                generated-docs.directory, so it's published and copied to static/docs alongside the
+                API guide with no separate copy step. Bound to prepare-package, after `test` has
+                already written the coverage data.
+                -->
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>report</id>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                        <phase>prepare-package</phase>
+                        <configuration>
+                            <outputDirectory>${generated-docs.directory}/coverage</outputDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <!--
+                Renders the surefire-reports XML (already written by the `test` phase) as a
+                browsable HTML test report, directly into generated-docs.directory for the same
+                reason as jacoco-maven-plugin above.
+                -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-report-plugin</artifactId>
+                <version>${maven-surefire-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>generate-test-report</id>
+                        <goals>
+                            <goal>report-only</goal>
+                        </goals>
+                        <phase>prepare-package</phase>
+                        <configuration>
+                            <outputDirectory>${generated-docs.directory}/tests</outputDirectory>
+                            <outputName>index</outputName>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <!--
+                Renders src/docs/asciidoc/index.adoc (the API guide, stitched together from Spring
+                REST Docs snippets under generated-snippets.directory and the Spring Modulith
+                component/module docs under modulith-docs.directory, see ModularityTests) into
+                HTML under generated-docs.directory. Bound to prepare-package so it runs after
+                `test`, once both snippet sources exist.
+                -->
+                <groupId>org.asciidoctor</groupId>
+                <artifactId>asciidoctor-maven-plugin</artifactId>
+                <version>${asciidoctor-maven-plugin.version}</version>
+                <configuration>
+                    <sourceDirectory>src/docs/asciidoc</sourceDirectory>
+                    <outputDirectory>${generated-docs.directory}</outputDirectory>
+                    <requires>
+                        <require>asciidoctor-diagram</require>
+                    </requires>
+                    <attributes>
+                        <snippets>${generated-snippets.directory}</snippets>
+                        <modulith-docs>${modulith-docs.directory}</modulith-docs>
+                        <source-highlighter>coderay</source-highlighter>
+                        <toc>left</toc>
+                        <toclevels>3</toclevels>
+                        <sectnums>true</sectnums>
+                    </attributes>
+                </configuration>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.asciidoctor</groupId>
+                        <artifactId>asciidoctorj-diagram</artifactId>
+                        <version>${asciidoctorj-diagram.version}</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>org.springframework.restdocs</groupId>
+                        <artifactId>spring-restdocs-asciidoctor</artifactId>
+                        <version>${spring-restdocs-asciidoctor.version}</version>
+                    </dependency>
+                </dependencies>
+                <executions>
+                    <execution>
+                        <id>generate-api-docs</id>
+                        <goals>
+                            <goal>process-asciidoc</goal>
+                        </goals>
+                        <phase>prepare-package</phase>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <!-- Publishes the rendered API guide as a static resource so it's servable at
+                /docs/index.html from the running app, next to the jar it documents. Must run at
+                prepare-package, strictly before maven-jar-plugin's package-phase jar:jar, so the
+                copied files are still part of target/classes when the jar is built; declared
+                after the asciidoctor-maven-plugin above so, within the same phase, this execution
+                runs second (Maven executes same-phase plugin executions in declaration order). -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-api-docs-to-static</id>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <phase>prepare-package</phase>
+                        <configuration>
+                            <outputDirectory>${project.build.outputDirectory}/static/docs</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>${generated-docs.directory}</directory>
+                                    <excludes>
+                                        <exclude>.asciidoctor/**</exclude>
+                                    </excludes>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
