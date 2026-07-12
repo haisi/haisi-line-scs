@@ -39,6 +39,17 @@ behaviour ever disagree, the build fails before either does.
 * Test coverage: link:coverage/index.html[]
 * Architecture Decision Records: https://github.com/haisi/haisi-line-scs/tree/main/docs/adr[docs/adr/]
 
+== Web UI
+
+`optimistic-locking-ui` is an Angular frontend for the API below, built on
+`@quadrel-enterprise-ui/framework`. It lists every `Line`, shows a line's details, and gates its
+delete action on the fetched resource's own `delete` hypermedia link being present (see
+<<reading-a-line>>) rather than re-implementing that permission check client-side. The screenshot
+below is taken fresh on every build, straight from a running instance of the app, so it can't drift
+out of sync with the actual UI.
+
+image::images/overview.png[Lines overview,800]
+
 == Architecture
 
 The application is organised as two Spring Modulith application modules. `line` is the one bounded

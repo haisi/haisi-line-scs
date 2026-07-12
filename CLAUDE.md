@@ -51,6 +51,14 @@ proxy (`proxy.conf.json`) forwarding `/lines`, `/dev`, `/docs` to a backend alre
 `:8080` (see above) — no CORS configuration exists or is needed. `npm test` runs the Angular unit
 tests (Karma/Jasmine).
 
+`./mvnw package` (or `verify`/`install`) additionally boots the app under the `local` profile
+(`take-overview-screenshot.sh`, run via `exec-maven-plugin`, bound to `prepare-package` alongside
+the rest of the doc generation in `optimistic-locking-web/pom.xml`), screenshots the Lines
+overview page, and embeds it into the API guide (see the "Web UI" section of `index.adoc`) —
+`./mvnw test` alone skips all of this, same as it already skips the rest of the doc generation.
+This needs a Playwright-installed Chromium
+(`cd optimistic-locking-ui && npx playwright install chromium`, one-time) in addition to Node/npm.
+
 There is no separate lint command configured for the backend; code style follows the
 palantir-java-format IntelliJ settings checked into `.idea/`.
 

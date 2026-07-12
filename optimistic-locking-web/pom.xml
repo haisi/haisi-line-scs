@@ -15,6 +15,7 @@
         <error-prone-core.version>2.50.0</error-prone-core.version>
         <!-- Properties using which additional Error Prone flags can be specified. -->
         <error-prone.patch-args/>
+        <exec-maven-plugin.version>3.5.0</exec-maven-plugin.version>
         <generated-docs.directory>${project.build.directory}/generated-docs</generated-docs.directory>
         <generated-snippets.directory>${project.build.directory}/generated-snippets</generated-snippets.directory>
         <java.version>25</java.version>
@@ -439,6 +440,60 @@
                         <configuration>
                             <outputDirectory>${generated-docs.directory}/tests</outputDirectory>
                             <outputName>index</outputName>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <!-- Writes this module's resolved runtime classpath out to a plain text file so
+                take-overview-screenshot.sh (below) can boot the app with a plain `java -cp`,
+                without needing its own copy of the dependency graph. compile+runtime scope only
+                (excludes test-scoped deps); deliberately still includes
+                jeap-spring-boot-security-starter-test, which shared/web/localdev/ needs at
+                runtime; see that dependency's own scope comment in this pom. -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.8.1</version>
+                <executions>
+                    <execution>
+                        <id>write-runtime-classpath</id>
+                        <goals>
+                            <goal>build-classpath</goal>
+                        </goals>
+                        <phase>prepare-package</phase>
+                        <configuration>
+                            <includeScope>runtime</includeScope>
+                            <outputFile>${project.build.directory}/runtime-classpath.txt</outputFile>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <!--
+                Screenshots the Angular frontend's Lines overview page into
+                generated-docs.directory/images, so index.adoc can embed it (see the "Web UI"
+                section) and it rides along with everything else asciidoctor-maven-plugin below
+                already copies out. take-overview-screenshot.sh boots a real instance of the app to
+                screenshot against, using the classpath file the maven-dependency-plugin execution
+                above just wrote, then tears it down again, all within this one execution, so
+                there's no second plugin execution of the same kind for Maven to potentially
+                reorder; declared here, before the asciidoctor-maven-plugin execution below, so the
+                image exists in time to be embedded.
+                -->
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>${exec-maven-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>take-overview-screenshot</id>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <phase>prepare-package</phase>
+                        <configuration>
+                            <executable>${project.basedir}/take-overview-screenshot.sh</executable>
                         </configuration>
                     </execution>
                 </executions>
