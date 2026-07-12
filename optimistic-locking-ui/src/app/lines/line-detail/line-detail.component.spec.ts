@@ -16,6 +16,7 @@ const fakeLine = {
   _links: {
     self: { href: 'http://localhost/lines/00000000-0000-0000-0000-000000000001' },
     delete: { href: 'http://localhost/lines/00000000-0000-0000-0000-000000000001/delete' },
+    'move-right': { href: 'http://localhost/lines/00000000-0000-0000-0000-000000000001/right' },
   },
 };
 
@@ -68,6 +69,15 @@ describe('LineDetailComponent', () => {
     }
     const deleteButton = page.elementLocator(deleteButtonElement);
     await expect.element(deleteButton).toBeVisible();
+
+    // The custom "Edit" action is likewise gated on a HATEOAS link -- here `move-right`, mocked
+    // above -- and rendered by the framework as a single plain button (not a menu) since there's
+    // only one custom action configured.
+    const editButtonElement = document.querySelector('[data-test-id="custom-button"]');
+    if (editButtonElement === null) {
+      throw new Error('edit action button not found');
+    }
+    await expect.element(page.elementLocator(editButtonElement)).toBeVisible();
 
     // Default test iframe viewport is mobile-sized; widen it to match the desktop screenshot
     // already used for the overview page (see screenshot-overview.mjs) before capturing this one.

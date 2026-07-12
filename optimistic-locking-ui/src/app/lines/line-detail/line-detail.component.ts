@@ -2,15 +2,18 @@ import { Component, computed, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
+  QdDialogService,
+  QdDialogSize,
   QdListModule,
   QdNotificationsService,
   QdPageConfig,
   QdPageModule,
   QdSectionModule,
 } from '@quadrel-enterprise-ui/framework';
-import { catchError, of } from 'rxjs';
+import { catchError, of, Subject, startWith, switchMap } from 'rxjs';
 import { LineService } from '../../core/line.service';
 import { toProblemDetail } from '../../core/problem-detail';
+import { EditLineDialogComponent } from './edit-line-dialog.component';
 
 function requireRouteId(route: ActivatedRoute): string {
   const id = route.snapshot.paramMap.get('id');
@@ -30,22 +33,32 @@ export class LineDetailComponent {
   private readonly router = inject(Router);
   private readonly lineService = inject(LineService);
   private readonly notifications = inject(QdNotificationsService);
+  private readonly dialogService = inject(QdDialogService);
 
   private readonly id = requireRouteId(this.route);
 
   /**
-   * A single fetch, not a live subscription: `LineService.get` completes after its one HTTP
-   * response, so this never re-emits on its own -- matching the old subscribe-once-in-constructor
-   * behavior, just expressed as a signal instead of manual `.set()` calls. A failed fetch (e.g.
-   * 404) is caught here rather than left to `toSignal`'s default of rethrowing on read, since we
-   * want to navigate back to the list, not crash the detail page.
+   * `refresh` re-triggers the fetch below (e.g. after a successful edit); `startWith` makes the
+   * initial fetch happen without anyone having to call `.next()` first. A failed fetch (e.g. 404)
+   * is caught here rather than left to `toSignal`'s default of rethrowing on read, since we want
+   * to navigate back to the list, not crash the detail page.
    */
+  private readonly refresh = new Subject<void>();
+
   private readonly lineWithETag = toSignal(
-    this.lineService.get(this.id).pipe(
-      catchError(() => {
-        this.goBackToList();
-        return of();
-      }),
+    this.refresh.pipe(
+      // Genuinely needed: startWith() with zero arguments emits nothing, so the initial fetch
+      // would never fire without an explicit (void-typed) placeholder value here.
+      // eslint-disable-next-line unicorn/no-useless-undefined
+      startWith(undefined),
+      switchMap(() =>
+        this.lineService.get(this.id).pipe(
+          catchError(() => {
+            this.goBackToList();
+            return of();
+          }),
+        ),
+      ),
     ),
   );
 
@@ -59,15 +72,16 @@ export class LineDetailComponent {
       right: result.line.right,
       businessPartnerId: result.line.businessPartnerId,
       canDelete: !!result.line._links.delete,
+      canEdit: !!(result.line._links['move-left'] ?? result.line._links['move-right']),
     };
   });
 
   /**
-   * `pageTypeConfig.delete` is only included when the fetched Line actually carries a `delete`
-   * HATEOAS link -- the backend only adds that link when the caller holds `line_#delete`
-   * (LineRepresentationModelProcessor). Omitting the key entirely, rather than disabling a
-   * button, is what makes qd-page's own Delete action disappear -- a real server-computed
-   * visibility gate.
+   * `pageTypeConfig.delete`/`customActions` are only included when the fetched Line actually
+   * carries the matching HATEOAS link (`delete`, or either of `move-left`/`move-right`) -- the
+   * backend only adds those when the caller holds the matching role for this specific line (see
+   * LineRepresentationModelProcessor). Omitting the key entirely, rather than disabling a button,
+   * is what makes qd-page's own actions disappear -- a real server-computed visibility gate.
    */
   readonly pageConfig = computed<QdPageConfig | null>(() => {
     const line = this.line();
@@ -81,6 +95,13 @@ export class LineDetailComponent {
         hideEdit: true,
         cancel: { handler: () => { this.goBackToList(); } },
         ...(line.canDelete ? { delete: { handler: () => { this.onDelete(); } } } : {}),
+        ...(line.canEdit
+          ? {
+              customActions: [
+                { label: { i18n: 'i18n.lines.detail.edit' }, handler: () => { this.onEdit(); } },
+              ],
+            }
+          : {}),
       },
     };
   });
@@ -104,6 +125,24 @@ export class LineDetailComponent {
         });
       },
     });
+  }
+
+  onEdit(): void {
+    const current = this.lineWithETag();
+    if (!current) {
+      return;
+    }
+    this.dialogService
+      .open(EditLineDialogComponent, {
+        title: { i18n: 'i18n.lines.detail.editDialog.title' },
+        dialogSize: QdDialogSize.Small,
+        data: { line: current.line, etag: current.etag },
+      })
+      .closed.subscribe((wasEdited) => {
+        if (wasEdited) {
+          this.refresh.next();
+        }
+      });
   }
 
   private goBackToList(): void {

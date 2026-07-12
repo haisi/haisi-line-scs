@@ -1,0 +1,13 @@
+<qd-dialog>
+  <form [formGroup]="form">
+    <qd-input formControlName="left" [config]="leftConfig" data-test-id="edit-left-input"></qd-input>
+    <qd-input formControlName="right" [config]="rightConfig" data-test-id="edit-right-input"></qd-input>
+  </form>
+
+  <qd-dialog-action>
+    <button qdButton color="secondary" (click)="onCancel()">Cancel</button>
+    <button qdButton [disabled]="form.invalid" (click)="onSubmit()" data-test-id="edit-submit-button">
+      Submit
+    </button>
+  </qd-dialog-action>
+</qd-dialog>

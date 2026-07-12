@@ -3,10 +3,10 @@ export interface LineLink {
 }
 
 /**
- * `delete` (and `move-left`/`move-right`, unused by this read-mostly UI) are HATEOAS affordances
- * the backend only includes when the caller actually holds the matching role for this specific
- * line -- see LineRepresentationModelProcessor. Gating the delete button on this link's presence
- * is a true server-computed visibility gate, not a client-side permission re-implementation.
+ * `delete`, `move-left`, and `move-right` are HATEOAS affordances the backend only includes when
+ * the caller actually holds the matching role for this specific line -- see
+ * LineRepresentationModelProcessor. Gating the delete/edit actions on these links' presence is a
+ * true server-computed visibility gate, not a client-side permission re-implementation.
  */
 export interface LineLinks {
   self: LineLink;

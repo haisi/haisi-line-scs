@@ -9,5 +9,10 @@
   "i18n.lines.overview.table.empty.content": "No lines found.",
   "i18n.lines.detail.title": "Line details",
   "i18n.lines.detail.deleteSuccess": "Line deleted.",
-  "i18n.lines.detail.deleteError": "Could not delete the line."
+  "i18n.lines.detail.deleteError": "Could not delete the line.",
+  "i18n.lines.detail.edit": "Edit",
+  "i18n.lines.detail.editDialog.title": "Edit line",
+  "i18n.lines.detail.editDialog.leftLabel": "Left",
+  "i18n.lines.detail.editDialog.rightLabel": "Right",
+  "i18n.lines.detail.editDialog.error": "Could not update the line."
 }

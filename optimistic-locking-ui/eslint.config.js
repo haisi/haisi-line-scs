@@ -61,6 +61,10 @@ module.exports = defineConfig(
       // await -- see the "Top-level await is not available in the configured target environment"
       // build error this rule's autofix produces in main.ts otherwise.
       'unicorn/prefer-top-level-await': 'off',
+      // Without this, passing a built-in static validator (e.g. `Validators.required`) straight
+      // into a FormControl's validators array -- the normal way to use them -- is flagged as if it
+      // were an unbound instance method; static validators never read `this`.
+      '@typescript-eslint/unbound-method': ['error', { ignoreStatic: true }],
     },
   },
   {

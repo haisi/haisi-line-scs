@@ -13,9 +13,10 @@ import org.springframework.web.bind.annotation.RestController;
  * Mints demo bearer tokens for the Angular app's identity switcher -- see {@link LocalDevAuthConfig}
  * for why this exists at all. Both demo identities hold {@code line_#read} for the fixed business
  * partner {@code acme} (matching {@code LineFixture}/{@code LocalDataSeeder}); only "administrator"
- * additionally holds {@code line_#delete}, the one role that makes {@code LineRepresentationModelProcessor}
- * add a {@code delete} HATEOAS link -- and therefore the delete button appear at all -- to a
- * fetched {@code Line}.
+ * additionally holds {@code line_#delete} (a user role, making {@code LineRepresentationModelProcessor}
+ * add a {@code delete} HATEOAS link) and {@code line_#create} for {@code acme} (a business-partner
+ * role, making it add {@code move-left}/{@code move-right} links, per {@link LineAuthorization#canEdit}) --
+ * the roles that make the delete and edit actions appear at all on a fetched {@code Line}.
  */
 @RestController
 @Profile("local")
@@ -36,7 +37,8 @@ public class DevLoginController {
                 .createValidForFixedLongPeriodBuilder("demo-" + identity, JeapAuthenticationContext.USER)
                 .withBusinessPartnerRoles(BUSINESS_PARTNER_ID, LineAuthorization.READ_ROLE);
         if (ADMINISTRATOR.equals(identity)) {
-            builder.withUserRoles(LineAuthorization.DELETE_ROLE);
+            builder.withBusinessPartnerRoles(BUSINESS_PARTNER_ID, LineAuthorization.CREATE_ROLE)
+                    .withUserRoles(LineAuthorization.DELETE_ROLE);
         }
         return Map.of("identity", identity, "token", builder.build().serialize());
     }
