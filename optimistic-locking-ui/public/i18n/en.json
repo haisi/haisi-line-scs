@@ -1,0 +1,12 @@
+{
+  "i18n.app.title": "Optimistic Locking Demo",
+  "i18n.lines.overview.title": "Lines",
+  "i18n.lines.overview.table.id": "Id",
+  "i18n.lines.overview.table.left": "Left",
+  "i18n.lines.overview.table.right": "Right",
+  "i18n.lines.overview.table.businessPartnerId": "Business Partner",
+  "i18n.lines.overview.table.empty.content": "No lines found.",
+  "i18n.lines.detail.title": "Line details",
+  "i18n.lines.detail.deleteSuccess": "Line deleted.",
+  "i18n.lines.detail.deleteError": "Could not delete the line."
+}

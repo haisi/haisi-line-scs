@@ -67,6 +67,35 @@ public class ApiSecurityConfig {
     }
 
     /**
+     * The Angular SPA embedded from {@code optimistic-locking-ui} (its {@code index.html} plus
+     * hashed JS/CSS bundles, served by Spring Boot's default {@code classpath:/static/**}
+     * handling) has to be loadable by a browser with no bearer token yet -- that's the only way
+     * the app can ever get one, via its own in-page identity switcher calling {@code /dev/login}.
+     * Without this, the request would fall through to the starter's own catch-all chain and 401
+     * before a single byte of the SPA loads. Scoped to the shell's own static asset shapes rather
+     * than {@code /**} for the same reason {@link #apiSecurityFilterChain} is scoped to {@code
+     * /lines/**}: Spring Security rejects a second any-request chain. Everything the SPA actually
+     * fetches at runtime after that -- {@code /lines/**} -- still goes through the real, opaque
+     * bearer-token chain above.
+     */
+    @Bean
+    @Order(Ordered.LOWEST_PRECEDENCE - 4)
+    SecurityFilterChain frontendAssetsSecurityFilterChain(HttpSecurity http) throws Exception {
+        http.securityMatcher(
+                        "/",
+                        "/index.html",
+                        "/favicon.ico",
+                        "/assets/**",
+                        "/*.js",
+                        "/*.css",
+                        "/*.txt",
+                        "/*.json")
+                .csrf(AbstractHttpConfigurer::disable)
+                .authorizeHttpRequests(authorize -> authorize.anyRequest().permitAll());
+        return http.build();
+    }
+
+    /**
      * {@link BusinessPartnerFilter} is a {@code @Component} solely so Spring can inject its {@code
      * ServletSemanticAuthorization} dependency; without this, Spring Boot would additionally
      * auto-register it as a servlet-container-wide filter on {@code /*}, running it a second time

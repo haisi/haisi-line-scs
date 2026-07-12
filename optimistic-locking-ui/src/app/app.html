@@ -1,0 +1,18 @@
+<!--
+  This identity switcher stands in for a real SSO login (see DemoIdentityService) -- it must
+  never exist in a real quadrel app. It's deliberately rendered outside <qd-shell> so it reads as
+  what it is: a dev-only harness for demoing the permission-gated delete button on the line detail
+  page, not part of the shell chrome a real user would see.
+-->
+<div class="demo-identity-switcher">
+  <label for="demo-identity">Demo identity:</label>
+  <select id="demo-identity" (change)="onIdentityChange($event)">
+    <option value="" [selected]="!identity()">Not logged in</option>
+    <option value="viewer" [selected]="identity() === 'viewer'">Viewer (read only)</option>
+    <option value="administrator" [selected]="identity() === 'administrator'">
+      Administrator (can delete)
+    </option>
+  </select>
+</div>
+
+<qd-shell [config]="shellConfig" qdSnackbarListener></qd-shell>

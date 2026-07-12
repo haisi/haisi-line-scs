@@ -47,6 +47,16 @@
         </dependency>
 
         <dependency>
+            <!-- The Angular frontend (see optimistic-locking-ui/pom.xml): its build compiles
+            straight into target/classes/static there, so depending on the jar puts the SPA's
+            index.html/js/css on this module's classpath, where Spring Boot's default static
+            resource handling serves it from "/". -->
+            <groupId>li.selman</groupId>
+            <artifactId>optimistic-locking-ui</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <dependency>
             <!-- Provides annotations such as @Var to tell error-prone something is non-constant -->
             <groupId>com.google.errorprone</groupId>
             <artifactId>error_prone_annotations</artifactId>

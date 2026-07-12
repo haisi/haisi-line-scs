@@ -1,0 +1,22 @@
+@if (pageConfig(); as config) {
+  <qd-page [config]="config">
+    @if (line(); as line) {
+      <qd-section>
+        <qd-horizontal-pairs>
+          <qd-horizontal-pairs-item>
+            <qd-horizontal-pairs-caption>Left</qd-horizontal-pairs-caption>
+            <qd-horizontal-pairs-value>{{ line.left }}</qd-horizontal-pairs-value>
+          </qd-horizontal-pairs-item>
+          <qd-horizontal-pairs-item>
+            <qd-horizontal-pairs-caption>Right</qd-horizontal-pairs-caption>
+            <qd-horizontal-pairs-value>{{ line.right }}</qd-horizontal-pairs-value>
+          </qd-horizontal-pairs-item>
+          <qd-horizontal-pairs-item>
+            <qd-horizontal-pairs-caption>Business partner</qd-horizontal-pairs-caption>
+            <qd-horizontal-pairs-value>{{ line.businessPartnerId }}</qd-horizontal-pairs-value>
+          </qd-horizontal-pairs-item>
+        </qd-horizontal-pairs>
+      </qd-section>
+    }
+  </qd-page>
+}

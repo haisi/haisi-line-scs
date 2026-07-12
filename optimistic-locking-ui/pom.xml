@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>li.selman</groupId>
+        <artifactId>optimistic-locking</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </parent>
+    <artifactId>optimistic-locking-ui</artifactId>
+    <name>optimistic-locking-ui</name>
+    <description>Angular frontend for optimistic-locking, built on @quadrel-enterprise-ui/framework</description>
+    <packaging>jar</packaging>
+
+    <!--
+    No frontend-maven-plugin here - this shells out to the system's own node/npm via
+    exec-maven-plugin rather than downloading a private Node distribution. Node.js (npm) must be
+    on PATH to build this module.
+    angular.json's outputPath is set directly to target/classes/static, so the Angular build lands
+    exactly where Maven would put resources anyway - no extra <resources> config needed, and the
+    resulting jar's classpath:/static/** is served by optimistic-locking-web's default Spring Boot
+    static-resource handling.
+    -->
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <id>npm-install</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>npm</executable>
+                            <arguments>
+                                <argument>ci</argument>
+                            </arguments>
+                            <skip>${skipFrontendInstall}</skip>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>ng-build</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>npm</executable>
+                            <arguments>
+                                <argument>run</argument>
+                                <argument>build</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <!-- This module has no Java sources; skip the jar plugin's default "no sources
+                found" complaint and just package whatever npm run build placed under
+                target/classes. -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <skipIfEmpty>false</skipIfEmpty>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <profile>
+            <!-- Skip `npm ci` (but not the `ng build`) once node_modules already exists, so
+            repeat local builds stay fast; a clean checkout or `npm ci`-requiring dependency change
+            still gets a fresh install. -->
+            <id>skip-npm-install-if-node-modules-exists</id>
+            <activation>
+                <file>
+                    <exists>node_modules</exists>
+                </file>
+            </activation>
+            <properties>
+                <skipFrontendInstall>true</skipFrontendInstall>
+            </properties>
+        </profile>
+        <profile>
+            <id>npm-install-if-node-modules-missing</id>
+            <activation>
+                <file>
+                    <missing>node_modules</missing>
+                </file>
+            </activation>
+            <properties>
+                <skipFrontendInstall>false</skipFrontendInstall>
+            </properties>
+        </profile>
+    </profiles>
+
+</project>

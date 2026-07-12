@@ -16,11 +16,14 @@
     <packaging>pom</packaging>
 
     <!--
-    Thin aggregator: optimistic-locking-web is the Spring Boot app (everything this project used
-    to be, unchanged).
+    Thin aggregator: optimistic-locking-web is the Spring Boot app, optimistic-locking-ui is the
+    Angular frontend, built by Maven via exec-maven-plugin (see its pom.xml) and consumed by -web
+    as a plain jar dependency so its compiled assets land on the classpath at classpath:/static
+    and are served by Spring Boot's default static-resource handling.
     -->
     <modules>
         <module>optimistic-locking-web</module>
+        <module>optimistic-locking-ui</module>
     </modules>
 
 </project>
