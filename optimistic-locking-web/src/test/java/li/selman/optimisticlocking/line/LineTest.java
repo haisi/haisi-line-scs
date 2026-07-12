@@ -76,8 +76,11 @@ class LineTest {
 
         @Test
         void moveRight_atMaxUpdates_notAllowed() {
-            Line line =
-                    LineFixture.newBuilder().line(1, 5).leftUpdates(3).rightUpdates(2).build();
+            Line line = LineFixture.newBuilder()
+                    .line(1, 5)
+                    .leftUpdates(3)
+                    .rightUpdates(2)
+                    .build();
 
             assertThat(line.can(new LineCommand.MoveRight(1))).isFalse();
         }

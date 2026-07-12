@@ -23,7 +23,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import ch.admin.bit.jeap.security.resource.token.JeapAuthenticationContext;
 import ch.admin.bit.jeap.security.test.jws.JwsBuilderFactory;
 import ch.admin.bit.jeap.security.test.resource.configuration.JeapOAuth2IntegrationTestResourceConfiguration;
-import tools.jackson.databind.json.JsonMapper;
 import java.util.UUID;
 import li.selman.optimisticlocking.line.LineAuthorization;
 import li.selman.optimisticlocking.line.LineFixture;
@@ -43,6 +42,7 @@ import org.springframework.restdocs.RestDocumentationExtension;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Generates the Spring REST Docs snippets included by {@code src/docs/asciidoc/index.adoc}. Kept
@@ -127,32 +127,28 @@ class LineApiDocumentationTest {
                         .content(objectMapper.writeValueAsString(
                                 new CreateLineRequest(1, 5, LineFixture.BUSINESS_PARTNER_ID))))
                 .andExpect(status().isCreated())
-                .andDo(
-                        document(
-                                "create-line",
-                                pathParameters(
-                                        parameterWithName("id").description("Client-chosen id of the line to create.")),
-                                requestHeaders(headerWithName("X-Partner-Id")
-                                        .description("Business partner context this request acts in -- see "
-                                                + "<<business-partner-scoping>>.")),
-                                relaxedRequestFields(
-                                        fieldWithPath("left").description("Initial position of the left point."),
-                                        fieldWithPath("right")
-                                                .description("Initial position of the right point (must be >= left)."),
-                                        fieldWithPath("businessPartnerId")
-                                                .description("Business partner the line is created on behalf of.")),
-                                responseHeaders(
-                                        headerWithName(HttpHeaders.ETAG)
-                                                .description(
-                                                        "The new aggregate version, quoted, for use as a later `If-Match`."),
-                                        headerWithName(HttpHeaders.LOCATION)
-                                                .description("URI of the newly created line.")),
-                                relaxedResponseFields(
-                                        fieldWithPath("id")
-                                                .description("The line's id (echoes the path parameter)."),
-                                        fieldWithPath("left").description("Current position of the left point."),
-                                        fieldWithPath("right").description("Current position of the right point."),
-                                        fieldWithPath("businessPartnerId").description("Owning business partner."))));
+                .andDo(document(
+                        "create-line",
+                        pathParameters(parameterWithName("id").description("Client-chosen id of the line to create.")),
+                        requestHeaders(headerWithName("X-Partner-Id")
+                                .description("Business partner context this request acts in -- see "
+                                        + "<<business-partner-scoping>>.")),
+                        relaxedRequestFields(
+                                fieldWithPath("left").description("Initial position of the left point."),
+                                fieldWithPath("right")
+                                        .description("Initial position of the right point (must be >= left)."),
+                                fieldWithPath("businessPartnerId")
+                                        .description("Business partner the line is created on behalf of.")),
+                        responseHeaders(
+                                headerWithName(HttpHeaders.ETAG)
+                                        .description(
+                                                "The new aggregate version, quoted, for use as a later `If-Match`."),
+                                headerWithName(HttpHeaders.LOCATION).description("URI of the newly created line.")),
+                        relaxedResponseFields(
+                                fieldWithPath("id").description("The line's id (echoes the path parameter)."),
+                                fieldWithPath("left").description("Current position of the left point."),
+                                fieldWithPath("right").description("Current position of the right point."),
+                                fieldWithPath("businessPartnerId").description("Owning business partner."))));
     }
 
     @Test
@@ -218,23 +214,29 @@ class LineApiDocumentationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new CreateLineRequest(1, 5, " "))))
                 .andExpect(status().isBadRequest())
-                .andDo(document(
-                        "create-line-validation-failed",
-                        relaxedResponseFields(
-                                fieldWithPath("status").description("The HTTP status code, repeated in the body per RFC 9457."),
-                                fieldWithPath("title")
-                                        .description(
-                                                "Short, human-readable summary of the problem -- the HTTP status's reason phrase."),
-                                fieldWithPath("detail")
-                                        .description(
-                                                "Spring's own generic Bean Validation message -- deliberately unspecific, since it never names which field failed."),
-                                fieldWithPath("instance").description("The request path that produced this problem."),
-                                fieldWithPath("errors")
-                                        .description(
-                                                "Extension property added by ApiExceptionHandler: one entry per failed constraint."),
-                                fieldWithPath("errors[].field").description("Name of the request field that failed validation."),
-                                fieldWithPath("errors[].message")
-                                        .description("The Bean Validation constraint's message, e.g. `@NotBlank`'s default."))));
+                .andDo(
+                        document(
+                                "create-line-validation-failed",
+                                relaxedResponseFields(
+                                        fieldWithPath("status")
+                                                .description(
+                                                        "The HTTP status code, repeated in the body per RFC 9457."),
+                                        fieldWithPath("title")
+                                                .description(
+                                                        "Short, human-readable summary of the problem -- the HTTP status's reason phrase."),
+                                        fieldWithPath("detail")
+                                                .description(
+                                                        "Spring's own generic Bean Validation message -- deliberately unspecific, since it never names which field failed."),
+                                        fieldWithPath("instance")
+                                                .description("The request path that produced this problem."),
+                                        fieldWithPath("errors")
+                                                .description(
+                                                        "Extension property added by ApiExceptionHandler: one entry per failed constraint."),
+                                        fieldWithPath("errors[].field")
+                                                .description("Name of the request field that failed validation."),
+                                        fieldWithPath("errors[].message")
+                                                .description(
+                                                        "The Bean Validation constraint's message, e.g. `@NotBlank`'s default."))));
     }
 
     @Test
@@ -306,7 +308,8 @@ class LineApiDocumentationTest {
                         pathParameters(parameterWithName("id").description("Id of the line.")),
                         requestHeaders(
                                 headerWithName(HttpHeaders.IF_MATCH)
-                                        .description("Mandatory precondition: the version this write is conditional on."),
+                                        .description(
+                                                "Mandatory precondition: the version this write is conditional on."),
                                 headerWithName("X-Partner-Id")
                                         .description("Business partner context this request acts in -- see "
                                                 + "<<business-partner-scoping>>.")),
@@ -353,13 +356,16 @@ class LineApiDocumentationTest {
                 .andDo(document(
                         "move-left-not-found",
                         relaxedResponseFields(
-                                fieldWithPath("status").description("The HTTP status code, repeated in the body per RFC 9457."),
+                                fieldWithPath("status")
+                                        .description("The HTTP status code, repeated in the body per RFC 9457."),
                                 fieldWithPath("title")
                                         .description(
                                                 "Short, human-readable summary of the problem -- the HTTP status's reason phrase."),
                                 fieldWithPath("detail")
-                                        .description("Human-readable explanation specific to this occurrence of the problem."),
-                                fieldWithPath("instance").description("The request path that produced this problem."))));
+                                        .description(
+                                                "Human-readable explanation specific to this occurrence of the problem."),
+                                fieldWithPath("instance")
+                                        .description("The request path that produced this problem."))));
     }
 
     @Test

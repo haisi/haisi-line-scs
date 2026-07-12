@@ -48,13 +48,14 @@
         </dependency>
 
         <dependency>
-            <!-- The Angular frontend (see optimistic-locking-ui/pom.xml): its build compiles
-            straight into target/classes/static there, so depending on the jar puts the SPA's
-            index.html/js/css on this module's classpath, where Spring Boot's default static
-            resource handling serves it from "/". -->
-            <groupId>li.selman</groupId>
-            <artifactId>optimistic-locking-ui</artifactId>
-            <version>${project.version}</version>
+            <!-- Normally test-only, but also used at runtime under the "local" Spring profile
+            (see shared/web/localdev/) to mint demo bearer tokens against an in-process mock JWKS
+            endpoint, there being no real Keycloak realm for this teaching repo to log in to.
+            LocalDevAuthConfig gates all of that behind @Profile("local"), so it's inert unless
+            explicitly activated; kept at ordinary (non-test) scope so those beans are actually on
+            the runtime classpath for `spring-boot:run`, not just for tests. -->
+            <groupId>ch.admin.bit.jeap</groupId>
+            <artifactId>jeap-spring-boot-security-starter-test</artifactId>
         </dependency>
 
         <dependency>
@@ -71,6 +72,16 @@
             <groupId>io.github.adr</groupId>
             <artifactId>e-adr</artifactId>
             <version>2.0.0</version>
+        </dependency>
+
+        <dependency>
+            <!-- The Angular frontend (see optimistic-locking-ui/pom.xml): its build compiles
+            straight into target/classes/static there, so depending on the jar puts the SPA's
+            index.html/js/css on this module's classpath, where Spring Boot's default static
+            resource handling serves it from "/". -->
+            <groupId>li.selman</groupId>
+            <artifactId>optimistic-locking-ui</artifactId>
+            <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>org.jmolecules</groupId>
@@ -102,11 +113,11 @@
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webmvc</artifactId>
+            <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-validation</artifactId>
+            <artifactId>spring-boot-starter-webmvc</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.modulith</groupId>
@@ -117,17 +128,6 @@
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
             <scope>runtime</scope>
-        </dependency>
-
-        <dependency>
-            <!-- Normally test-only, but also used at runtime under the "local" Spring profile
-            (see shared/web/localdev/) to mint demo bearer tokens against an in-process mock JWKS
-            endpoint, there being no real Keycloak realm for this teaching repo to log in to.
-            LocalDevAuthConfig gates all of that behind @Profile("local"), so it's inert unless
-            explicitly activated; kept at ordinary (non-test) scope so those beans are actually on
-            the runtime classpath for `spring-boot:run`, not just for tests. -->
-            <groupId>ch.admin.bit.jeap</groupId>
-            <artifactId>jeap-spring-boot-security-starter-test</artifactId>
         </dependency>
 
         <dependency>
@@ -396,26 +396,56 @@
             </plugin>
 
             <plugin>
-                <!--
-                jeap-spring-boot-parent already manages this plugin and registers its "agent"
-                execution (prepare-agent/prepare-agent-integration, bound to their default phases),
-                so simply activating the plugin here is enough to instrument test runs. The "report"
-                execution added below renders the resulting coverage data as HTML directly into
-                generated-docs.directory, so it's published and copied to static/docs alongside the
-                API guide with no separate copy step. Bound to prepare-package, after `test` has
-                already written the coverage data.
-                -->
-                <groupId>org.jacoco</groupId>
-                <artifactId>jacoco-maven-plugin</artifactId>
+                <!-- Writes this module's resolved runtime classpath out to a plain text file so
+                take-overview-screenshot.sh (below) can boot the app with a plain `java -cp`,
+                without needing its own copy of the dependency graph. compile+runtime scope only
+                (excludes test-scoped deps); deliberately still includes
+                jeap-spring-boot-security-starter-test, which shared/web/localdev/ needs at
+                runtime; see that dependency's own scope comment in this pom. -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.8.1</version>
                 <executions>
                     <execution>
-                        <id>report</id>
+                        <id>write-runtime-classpath</id>
                         <goals>
-                            <goal>report</goal>
+                            <goal>build-classpath</goal>
                         </goals>
                         <phase>prepare-package</phase>
                         <configuration>
-                            <outputDirectory>${generated-docs.directory}/coverage</outputDirectory>
+                            <includeScope>runtime</includeScope>
+                            <outputFile>${project.build.directory}/runtime-classpath.txt</outputFile>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <!-- Publishes the rendered API guide as a static resource so it's servable at
+                /docs/index.html from the running app, next to the jar it documents. Must run at
+                prepare-package, strictly before maven-jar-plugin's package-phase jar:jar, so the
+                copied files are still part of target/classes when the jar is built; declared
+                after the asciidoctor-maven-plugin above so, within the same phase, this execution
+                runs second (Maven executes same-phase plugin executions in declaration order). -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-api-docs-to-static</id>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <phase>prepare-package</phase>
+                        <configuration>
+                            <outputDirectory>${project.build.outputDirectory}/static/docs</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>${generated-docs.directory}</directory>
+                                    <excludes>
+                                        <exclude>.asciidoctor/**</exclude>
+                                    </excludes>
+                                </resource>
+                            </resources>
                         </configuration>
                     </execution>
                 </executions>
@@ -446,26 +476,50 @@
             </plugin>
 
             <plugin>
-                <!-- Writes this module's resolved runtime classpath out to a plain text file so
-                take-overview-screenshot.sh (below) can boot the app with a plain `java -cp`,
-                without needing its own copy of the dependency graph. compile+runtime scope only
-                (excludes test-scoped deps); deliberately still includes
-                jeap-spring-boot-security-starter-test, which shared/web/localdev/ needs at
-                runtime; see that dependency's own scope comment in this pom. -->
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-dependency-plugin</artifactId>
-                <version>3.8.1</version>
+                <!--
+                Renders src/docs/asciidoc/index.adoc (the API guide, stitched together from Spring
+                REST Docs snippets under generated-snippets.directory and the Spring Modulith
+                component/module docs under modulith-docs.directory, see ModularityTests) into
+                HTML under generated-docs.directory. Bound to prepare-package so it runs after
+                `test`, once both snippet sources exist.
+                -->
+                <groupId>org.asciidoctor</groupId>
+                <artifactId>asciidoctor-maven-plugin</artifactId>
+                <version>${asciidoctor-maven-plugin.version}</version>
+                <configuration>
+                    <sourceDirectory>src/docs/asciidoc</sourceDirectory>
+                    <outputDirectory>${generated-docs.directory}</outputDirectory>
+                    <requires>
+                        <require>asciidoctor-diagram</require>
+                    </requires>
+                    <attributes>
+                        <snippets>${generated-snippets.directory}</snippets>
+                        <modulith-docs>${modulith-docs.directory}</modulith-docs>
+                        <source-highlighter>coderay</source-highlighter>
+                        <toc>left</toc>
+                        <toclevels>3</toclevels>
+                        <sectnums>true</sectnums>
+                    </attributes>
+                </configuration>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.asciidoctor</groupId>
+                        <artifactId>asciidoctorj-diagram</artifactId>
+                        <version>${asciidoctorj-diagram.version}</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>org.springframework.restdocs</groupId>
+                        <artifactId>spring-restdocs-asciidoctor</artifactId>
+                        <version>${spring-restdocs-asciidoctor.version}</version>
+                    </dependency>
+                </dependencies>
                 <executions>
                     <execution>
-                        <id>write-runtime-classpath</id>
+                        <id>generate-api-docs</id>
                         <goals>
-                            <goal>build-classpath</goal>
+                            <goal>process-asciidoc</goal>
                         </goals>
                         <phase>prepare-package</phase>
-                        <configuration>
-                            <includeScope>runtime</includeScope>
-                            <outputFile>${project.build.directory}/runtime-classpath.txt</outputFile>
-                        </configuration>
                     </execution>
                 </executions>
             </plugin>
@@ -522,79 +576,25 @@
 
             <plugin>
                 <!--
-                Renders src/docs/asciidoc/index.adoc (the API guide, stitched together from Spring
-                REST Docs snippets under generated-snippets.directory and the Spring Modulith
-                component/module docs under modulith-docs.directory, see ModularityTests) into
-                HTML under generated-docs.directory. Bound to prepare-package so it runs after
-                `test`, once both snippet sources exist.
+                jeap-spring-boot-parent already manages this plugin and registers its "agent"
+                execution (prepare-agent/prepare-agent-integration, bound to their default phases),
+                so simply activating the plugin here is enough to instrument test runs. The "report"
+                execution added below renders the resulting coverage data as HTML directly into
+                generated-docs.directory, so it's published and copied to static/docs alongside the
+                API guide with no separate copy step. Bound to prepare-package, after `test` has
+                already written the coverage data.
                 -->
-                <groupId>org.asciidoctor</groupId>
-                <artifactId>asciidoctor-maven-plugin</artifactId>
-                <version>${asciidoctor-maven-plugin.version}</version>
-                <configuration>
-                    <sourceDirectory>src/docs/asciidoc</sourceDirectory>
-                    <outputDirectory>${generated-docs.directory}</outputDirectory>
-                    <requires>
-                        <require>asciidoctor-diagram</require>
-                    </requires>
-                    <attributes>
-                        <snippets>${generated-snippets.directory}</snippets>
-                        <modulith-docs>${modulith-docs.directory}</modulith-docs>
-                        <source-highlighter>coderay</source-highlighter>
-                        <toc>left</toc>
-                        <toclevels>3</toclevels>
-                        <sectnums>true</sectnums>
-                    </attributes>
-                </configuration>
-                <dependencies>
-                    <dependency>
-                        <groupId>org.asciidoctor</groupId>
-                        <artifactId>asciidoctorj-diagram</artifactId>
-                        <version>${asciidoctorj-diagram.version}</version>
-                    </dependency>
-                    <dependency>
-                        <groupId>org.springframework.restdocs</groupId>
-                        <artifactId>spring-restdocs-asciidoctor</artifactId>
-                        <version>${spring-restdocs-asciidoctor.version}</version>
-                    </dependency>
-                </dependencies>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
                 <executions>
                     <execution>
-                        <id>generate-api-docs</id>
+                        <id>report</id>
                         <goals>
-                            <goal>process-asciidoc</goal>
-                        </goals>
-                        <phase>prepare-package</phase>
-                    </execution>
-                </executions>
-            </plugin>
-
-            <plugin>
-                <!-- Publishes the rendered API guide as a static resource so it's servable at
-                /docs/index.html from the running app, next to the jar it documents. Must run at
-                prepare-package, strictly before maven-jar-plugin's package-phase jar:jar, so the
-                copied files are still part of target/classes when the jar is built; declared
-                after the asciidoctor-maven-plugin above so, within the same phase, this execution
-                runs second (Maven executes same-phase plugin executions in declaration order). -->
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-resources-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>copy-api-docs-to-static</id>
-                        <goals>
-                            <goal>copy-resources</goal>
+                            <goal>report</goal>
                         </goals>
                         <phase>prepare-package</phase>
                         <configuration>
-                            <outputDirectory>${project.build.outputDirectory}/static/docs</outputDirectory>
-                            <resources>
-                                <resource>
-                                    <directory>${generated-docs.directory}</directory>
-                                    <excludes>
-                                        <exclude>.asciidoctor/**</exclude>
-                                    </excludes>
-                                </resource>
-                            </resources>
+                            <outputDirectory>${generated-docs.directory}/coverage</outputDirectory>
                         </configuration>
                     </execution>
                 </executions>

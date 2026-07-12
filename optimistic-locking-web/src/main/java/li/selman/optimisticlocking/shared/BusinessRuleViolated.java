@@ -11,6 +11,9 @@ import org.springframework.web.ErrorResponseException;
 public class BusinessRuleViolated extends ErrorResponseException {
 
     public BusinessRuleViolated(String message) {
-        super(HttpStatus.UNPROCESSABLE_CONTENT, ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_CONTENT, message), null);
+        super(
+                HttpStatus.UNPROCESSABLE_CONTENT,
+                ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_CONTENT, message),
+                null);
     }
 }

@@ -15,6 +15,9 @@ import org.springframework.web.ErrorResponseException;
 public class LineNotFound extends ErrorResponseException {
 
     public LineNotFound(UUID id) {
-        super(HttpStatus.NOT_FOUND, ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "Line %s not found".formatted(id)), null);
+        super(
+                HttpStatus.NOT_FOUND,
+                ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "Line %s not found".formatted(id)),
+                null);
     }
 }

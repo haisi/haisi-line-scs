@@ -2,7 +2,26 @@
   "permissions": {
     "allow": [
       "Bash(docker run *)",
-      "Bash(docker build *)"
+      "Bash(docker build *)",
+      "Bash(./mvnw -v)",
+      "Read(//private/tmp/**)",
+      "Bash(jar tf *)",
+      "Bash(javap -cp . 'org.springframework.test.web.servlet.client.RestTestClient$RequestHeadersSpec')",
+      "Bash(jar xf *)",
+      "Bash(javap 'org.springframework.test.web.servlet.client.RestTestClient$RequestHeadersSpec')",
+      "Bash(javap 'org.springframework.test.web.servlet.client.RestTestClient$ResponseSpec')",
+      "Bash(javap 'org.springframework.test.web.servlet.client.RestTestClient$BodyContentSpec')",
+      "Bash(javap 'org.springframework.test.web.servlet.client.StatusAssertions')",
+      "Bash(javap 'org.springframework.test.web.servlet.client.JsonPathAssertions')",
+      "Bash(xargs -I{} sh -c 'unzip -l \"{}\" 2>/dev/null | grep -q \"AbstractStatusAssertions.class\" && echo {}')",
+      "Bash(javap 'org.springframework.test.web.support.AbstractStatusAssertions')",
+      "Bash(./mvnw -q dependency:tree -Dincludes=org.springframework.hateoas)",
+      "Bash(./mvnw dependency:tree)",
+      "Bash(javap org.springframework.hateoas.server.LinkBuilder)",
+      "Bash(javap org.springframework.hateoas.RepresentationModel)",
+      "Bash(./mvnw -q -DskipTests compile)",
+      "Bash(./mvnw -q test)",
+      "Bash(./mvnw test *)"
     ]
   }
 }

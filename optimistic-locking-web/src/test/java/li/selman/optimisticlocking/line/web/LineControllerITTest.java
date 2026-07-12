@@ -6,7 +6,6 @@ import static org.springframework.boot.test.context.SpringBootTest.WebEnvironmen
 import ch.admin.bit.jeap.security.resource.token.JeapAuthenticationContext;
 import ch.admin.bit.jeap.security.test.jws.JwsBuilderFactory;
 import ch.admin.bit.jeap.security.test.resource.configuration.JeapOAuth2IntegrationTestResourceConfiguration;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -17,7 +16,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
-
 import li.selman.optimisticlocking.line.LineAuthorization;
 import li.selman.optimisticlocking.line.LineFixture;
 import li.selman.optimisticlocking.line.LineRepository;
@@ -51,9 +49,9 @@ import org.springframework.test.web.servlet.client.RestTestClient;
 @SpringBootTest(
         webEnvironment = DEFINED_PORT,
         properties = {
-                "server.port=18089",
-                "jeap.security.oauth2.resourceserver.authorization-server.jwk-set-uri="
-                + "http://localhost:18089/.well-known/jwks.json"
+            "server.port=18089",
+            "jeap.security.oauth2.resourceserver.authorization-server.jwk-set-uri="
+                    + "http://localhost:18089/.well-known/jwks.json"
         })
 @AutoConfigureRestTestClient
 @Import(JeapOAuth2IntegrationTestResourceConfiguration.class)
@@ -63,7 +61,6 @@ class LineControllerITTest {
     private static final String LINE_READ = "wvs_@line_#read";
     private static final String LINE_CREATE = "wvs_@line_#create";
     private static final String LINE_DELETE = "wvs_@line_#delete";
-
 
     @Autowired
     LineRepository lineRepository;
@@ -117,29 +114,33 @@ class LineControllerITTest {
     /** Has neither GP nor User Roles */
     private String TOKEN_EMPTY;
 
-
     @BeforeEach
     void authenticate() {
         TOKEN_BAZG_EMPLOYEE = jwsBuilderFactory
                 .createValidForFixedLongPeriodBuilder("test-subject", JeapAuthenticationContext.USER)
                 .withUserRoles(LINE_DELETE, LINE_READ)
-                .build().serialize();
+                .build()
+                .serialize();
 
         TOKEN_COOP_EMPLOYEE = jwsBuilderFactory
                 .createValidForFixedLongPeriodBuilder("test-subject", JeapAuthenticationContext.USER)
                 .withBusinessPartnerRoles(BP_ID_COOP_JUMBO, LineAuthorization.CREATE_ROLE, LineAuthorization.READ_ROLE)
                 .withBusinessPartnerRoles(BP_ID_COOP_PRONTO, "something_@else_#READ")
-                .build().serialize();
+                .build()
+                .serialize();
 
         TOKEN_MGB_EMPLOYEE = jwsBuilderFactory
                 .createValidForFixedLongPeriodBuilder("test-subject", JeapAuthenticationContext.USER)
                 .withBusinessPartnerRoles(BP_ID_MGB_DENNER, LineAuthorization.CREATE_ROLE, LineAuthorization.READ_ROLE)
-                .withBusinessPartnerRoles(BP_ID_MGB_MIGROLINO, LineAuthorization.CREATE_ROLE, LineAuthorization.READ_ROLE)
-                .build().serialize();
+                .withBusinessPartnerRoles(
+                        BP_ID_MGB_MIGROLINO, LineAuthorization.CREATE_ROLE, LineAuthorization.READ_ROLE)
+                .build()
+                .serialize();
 
         TOKEN_EMPTY = jwsBuilderFactory
                 .createValidForFixedLongPeriodBuilder("test-subject", JeapAuthenticationContext.USER)
-                .build().serialize();
+                .build()
+                .serialize();
 
         // line_#create for the fixture's partner (business-partner-scoped) plus line_#delete as a
         // regular/internal user (user-independent) -- these are deliberately two different claims.
@@ -759,7 +760,9 @@ class LineControllerITTest {
                     .jsonPath("$.status")
                     .isEqualTo(422)
                     .jsonPath("$.detail")
-                    .value(String.class, detail -> assertThat(detail).contains("MoveLeft").contains(id.toString()));
+                    .value(
+                            String.class,
+                            detail -> assertThat(detail).contains("MoveLeft").contains(id.toString()));
         }
 
         /**
@@ -1238,7 +1241,12 @@ class LineControllerITTest {
                     .businessPartnerId("other-corp")
                     .build());
 
-            authedAs(TOKEN_BAZG_EMPLOYEE).get().uri("/lines/{id}", acmeLine).exchange().expectStatus().isOk();
+            authedAs(TOKEN_BAZG_EMPLOYEE)
+                    .get()
+                    .uri("/lines/{id}", acmeLine)
+                    .exchange()
+                    .expectStatus()
+                    .isOk();
             authedAs(TOKEN_BAZG_EMPLOYEE)
                     .get()
                     .uri("/lines/{id}", otherCorpLine)
@@ -1250,8 +1258,10 @@ class LineControllerITTest {
         @Test
         void bazgEmployee_canDeleteAnyLine_regardlessOfOwningBusinessPartner() {
             UUID id = UUID.randomUUID();
-            lineRepository.save(
-                    LineFixture.newBuilder().id(id).businessPartnerId("other-corp").build());
+            lineRepository.save(LineFixture.newBuilder()
+                    .id(id)
+                    .businessPartnerId("other-corp")
+                    .build());
 
             authedAs(TOKEN_BAZG_EMPLOYEE)
                     .delete()
@@ -1379,10 +1389,14 @@ class LineControllerITTest {
 
         @Test
         void coopEmployee_getAll_withPartnerHeader_scopesToJumbosLines_notProntos() {
-            lineRepository.save(
-                    LineFixture.newBuilder().randomId().businessPartnerId(BP_ID_COOP_JUMBO).build());
-            lineRepository.save(
-                    LineFixture.newBuilder().randomId().businessPartnerId(BP_ID_COOP_PRONTO).build());
+            lineRepository.save(LineFixture.newBuilder()
+                    .randomId()
+                    .businessPartnerId(BP_ID_COOP_JUMBO)
+                    .build());
+            lineRepository.save(LineFixture.newBuilder()
+                    .randomId()
+                    .businessPartnerId(BP_ID_COOP_PRONTO)
+                    .build());
 
             authedAs(TOKEN_COOP_EMPLOYEE)
                     .get()
@@ -1402,8 +1416,10 @@ class LineControllerITTest {
          */
         @Test
         void coopEmployee_getAll_cannotUseJumbosReadRole_toListProntosLines_viaPartnerHeader() {
-            lineRepository.save(
-                    LineFixture.newBuilder().randomId().businessPartnerId(BP_ID_COOP_PRONTO).build());
+            lineRepository.save(LineFixture.newBuilder()
+                    .randomId()
+                    .businessPartnerId(BP_ID_COOP_PRONTO)
+                    .build());
 
             authedAs(TOKEN_COOP_EMPLOYEE)
                     .get()
@@ -1484,8 +1500,10 @@ class LineControllerITTest {
          */
         @Test
         void mgbEmployee_getAll_withPartnerHeader_scopesToJustThatOnePartner() {
-            lineRepository.save(
-                    LineFixture.newBuilder().randomId().businessPartnerId(BP_ID_MGB_DENNER).build());
+            lineRepository.save(LineFixture.newBuilder()
+                    .randomId()
+                    .businessPartnerId(BP_ID_MGB_DENNER)
+                    .build());
             lineRepository.save(LineFixture.newBuilder()
                     .randomId()
                     .businessPartnerId(BP_ID_MGB_MIGROLINO)
@@ -1508,9 +1526,19 @@ class LineControllerITTest {
             UUID id = UUID.randomUUID();
             lineRepository.save(LineFixture.newBuilder().id(id).build());
 
-            authedAs(TOKEN_EMPTY).get().uri("/lines/{id}", id).exchange().expectStatus().isForbidden();
+            authedAs(TOKEN_EMPTY)
+                    .get()
+                    .uri("/lines/{id}", id)
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden();
             authedAs(TOKEN_EMPTY).get().uri("/lines").exchange().expectStatus().isForbidden();
-            authedAs(TOKEN_EMPTY).delete().uri("/lines/{id}", id).exchange().expectStatus().isForbidden();
+            authedAs(TOKEN_EMPTY)
+                    .delete()
+                    .uri("/lines/{id}", id)
+                    .exchange()
+                    .expectStatus()
+                    .isForbidden();
             authedAs(TOKEN_EMPTY)
                     .put()
                     .uri("/lines/{id}", UUID.randomUUID())

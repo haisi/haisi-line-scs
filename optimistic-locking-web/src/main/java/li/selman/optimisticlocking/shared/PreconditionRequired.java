@@ -15,7 +15,8 @@ public class PreconditionRequired extends ErrorResponseException {
         super(
                 HttpStatus.PRECONDITION_REQUIRED,
                 ProblemDetail.forStatusAndDetail(
-                        HttpStatus.PRECONDITION_REQUIRED, "Aggregate of id %s requires an If-Match precondition".formatted(id)),
+                        HttpStatus.PRECONDITION_REQUIRED,
+                        "Aggregate of id %s requires an If-Match precondition".formatted(id)),
                 null);
     }
 }

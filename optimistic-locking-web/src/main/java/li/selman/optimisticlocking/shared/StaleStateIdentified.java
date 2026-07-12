@@ -14,7 +14,8 @@ public class StaleStateIdentified extends ErrorResponseException {
     public StaleStateIdentified(UUID id) {
         super(
                 HttpStatus.PRECONDITION_FAILED,
-                ProblemDetail.forStatusAndDetail(HttpStatus.PRECONDITION_FAILED, "Aggregate of id %s is stale".formatted(id)),
+                ProblemDetail.forStatusAndDetail(
+                        HttpStatus.PRECONDITION_FAILED, "Aggregate of id %s is stale".formatted(id)),
                 null);
     }
 }

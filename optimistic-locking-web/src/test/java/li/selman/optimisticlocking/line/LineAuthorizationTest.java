@@ -88,8 +88,9 @@ class LineAuthorizationTest {
         @ParameterizedTest
         @MethodSource("li.selman.optimisticlocking.line.LineAuthorizationTest#commandTypes")
         void commandTypeSupported(Class<? extends LineCommand> commandType) {
-            LineAuthorization authorization = new LineAuthorization(
-                    ServletSemanticAuthorizationMock.builder().systemName(SYSTEM).build());
+            LineAuthorization authorization = new LineAuthorization(ServletSemanticAuthorizationMock.builder()
+                    .systemName(SYSTEM)
+                    .build());
             Line line = LineFixture.newBuilder().build();
 
             assertThatCode(() -> authorization.can(commandType, line)).doesNotThrowAnyException();
@@ -107,7 +108,8 @@ class LineAuthorizationTest {
                     .build());
             Line line = LineFixture.newBuilder().businessPartnerId(ACME).build();
 
-            assertThat(businessPartnerOnly.can(LineCommand.DeleteLine.class, line)).isFalse();
+            assertThat(businessPartnerOnly.can(LineCommand.DeleteLine.class, line))
+                    .isFalse();
             assertThat(regularUser.can(LineCommand.DeleteLine.class, line)).isTrue();
         }
 
@@ -121,8 +123,10 @@ class LineAuthorizationTest {
             Line ownedByOtherCorp =
                     LineFixture.newBuilder().businessPartnerId(OTHER_CORP).build();
 
-            assertThat(authorization.can(LineCommand.MoveLeft.class, ownedByAcme)).isTrue();
-            assertThat(authorization.can(LineCommand.MoveRight.class, ownedByAcme)).isTrue();
+            assertThat(authorization.can(LineCommand.MoveLeft.class, ownedByAcme))
+                    .isTrue();
+            assertThat(authorization.can(LineCommand.MoveRight.class, ownedByAcme))
+                    .isTrue();
             assertThat(authorization.can(LineCommand.MoveLeft.class, ownedByOtherCorp))
                     .isFalse();
             assertThat(authorization.can(LineCommand.MoveRight.class, ownedByOtherCorp))

@@ -57,7 +57,10 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         ProblemDetail body = ex.getBody();
         List<Map<String, String>> errors = ex.getBindingResult().getFieldErrors().stream()
                 .map(fe -> Map.of(
-                        "field", fe.getField(), "message", Objects.requireNonNullElse(fe.getDefaultMessage(), "invalid")))
+                        "field",
+                        fe.getField(),
+                        "message",
+                        Objects.requireNonNullElse(fe.getDefaultMessage(), "invalid")))
                 .toList();
         body.setProperty("errors", errors);
         return handleExceptionInternal(ex, body, headers, status, request);

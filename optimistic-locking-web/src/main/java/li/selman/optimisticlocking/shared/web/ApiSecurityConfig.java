@@ -81,15 +81,7 @@ public class ApiSecurityConfig {
     @Bean
     @Order(Ordered.LOWEST_PRECEDENCE - 4)
     SecurityFilterChain frontendAssetsSecurityFilterChain(HttpSecurity http) throws Exception {
-        http.securityMatcher(
-                        "/",
-                        "/index.html",
-                        "/favicon.ico",
-                        "/assets/**",
-                        "/*.js",
-                        "/*.css",
-                        "/*.txt",
-                        "/*.json")
+        http.securityMatcher("/", "/index.html", "/favicon.ico", "/assets/**", "/*.js", "/*.css", "/*.txt", "/*.json")
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(authorize -> authorize.anyRequest().permitAll());
         return http.build();

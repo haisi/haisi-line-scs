@@ -6,9 +6,7 @@ import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.methodOn;
 import io.github.adr.linked.ADR;
 import jakarta.annotation.Nullable;
 import jakarta.validation.Valid;
-
 import java.util.List;
-
 import li.selman.optimisticlocking.line.Line;
 import li.selman.optimisticlocking.line.LineAuthorization;
 import li.selman.optimisticlocking.line.LineCommand;
@@ -52,8 +50,10 @@ public class LineController {
     @GetMapping("{id}")
     @PreAuthorize("hasRoleForPartner(@lineAuthorization.READ_ROLE, #partnerId)")
     @ADR(1)
-    ResponseEntity<EntityModel<Line>> get(@PathVariable LineId id, IfNoneMatch ifNoneMatch,
-                                          @RequestHeader(name = "X-Partner-Id", required = false) @Nullable String partnerId) {
+    ResponseEntity<EntityModel<Line>> get(
+            @PathVariable LineId id,
+            IfNoneMatch ifNoneMatch,
+            @RequestHeader(name = "X-Partner-Id", required = false) @Nullable String partnerId) {
         return lineRepository
                 .findById(id)
                 .map(it -> {
@@ -67,7 +67,6 @@ public class LineController {
                 })
                 .orElse(ResponseEntity.notFound().build());
     }
-
 
     /**
      * BusinessPartner can only view their own lines. Users with the <b>user-role</b> can view all lines.
@@ -101,15 +100,18 @@ public class LineController {
     @PutMapping("{id}")
     @PreAuthorize("hasRoleForPartner(@lineAuthorization.CREATE_ROLE, #partnerId)")
     @ADR(1)
-    ResponseEntity<EntityModel<Line>> create(@PathVariable LineId id, @Valid @RequestBody CreateLineRequest body, @RequestHeader(name = "X-Partner-Id", required = false) @Nullable String partnerId) {
+    ResponseEntity<EntityModel<Line>> create(
+            @PathVariable LineId id,
+            @Valid @RequestBody CreateLineRequest body,
+            @RequestHeader(name = "X-Partner-Id", required = false) @Nullable String partnerId) {
         LineCreationResult result =
                 lineService.create(new LineCommand.CreateLine(id, body.left(), body.right(), body.businessPartnerId()));
         // RFC 9110 §9.3.4: a 201 response MUST carry Location; a 200 replay needs none, since the
         // client already addressed this exact URI to get here.
         ResponseEntity.BodyBuilder response = result.created()
                 ? ResponseEntity.status(HttpStatus.CREATED)
-                .location(linkTo(methodOn(LineController.class).get(id, IfNoneMatch.of(null), null))
-                        .toUri())
+                        .location(linkTo(methodOn(LineController.class).get(id, IfNoneMatch.of(null), null))
+                                .toUri())
                 : ResponseEntity.status(HttpStatus.OK);
         return response.eTag(result.line().getLockVersion()).body(EntityModel.of(result.line()));
     }
