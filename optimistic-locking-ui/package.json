@@ -7,6 +7,7 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
+    "test:debug": "ng test --configuration=debug",
     "screenshot": "node scripts/screenshot-overview.mjs"
   },
   "prettier": {

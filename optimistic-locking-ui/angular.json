@@ -111,6 +111,15 @@
             "browsers": [
               "chromiumHeadless"
             ]
+          },
+          "configurations": {
+            "debug": {
+              "browsers": [
+                "chromium"
+              ],
+              "debug": true,
+              "watch": false
+            }
           }
         }
       }

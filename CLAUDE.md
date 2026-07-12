@@ -51,8 +51,14 @@ proxy (`proxy.conf.json`) forwarding `/lines`, `/dev`, `/docs` to a backend alre
 `:8080` (see above) — no CORS configuration exists or is needed. `npm test` runs the Angular unit/
 component tests via the `@angular/build:unit-test` builder on Vitest (Browser Mode, a real headless
 Chromium via Playwright, configured in `angular.json`'s `test` target) — not Karma/Jasmine. It's a
-regular Vitest suite: runnable/debuggable from IntelliJ like any other test, watches by default in
-a TTY, and runs once under `npm test -- --watch=false`.
+regular Vitest suite: runnable from IntelliJ like any other test, watches by default in a TTY, and
+runs once under `npm test -- --watch=false`. IntelliJ/WebStorm's own gutter "Debug" action does
+*not* currently work for Vitest Browser Mode tests (a known upstream bug, unrelated to this repo's
+setup) — to actually set a breakpoint and watch it hit live, use `npm run test:debug` instead: it
+runs headed (a visible Chromium window, via the `debug` configuration in `angular.json`) and pauses
+with Node's inspector listening (`--inspect-brk` under the hood) until you attach via
+`chrome://inspect` (or WebStorm's "Attach to Node.js/Chrome" run configuration), then set
+breakpoints in the attached DevTools' Sources panel — sourcemaps show the original `.ts`.
 
 Component tests double as the fastest way to develop a component against fixed data without the
 backend: e.g. `line-detail.component.spec.ts` fills `LineDetailComponent` via `TestBed` provider
