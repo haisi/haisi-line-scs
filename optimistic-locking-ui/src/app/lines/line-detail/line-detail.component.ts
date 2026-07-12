@@ -1,4 +1,5 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
   QdListModule,
@@ -7,6 +8,7 @@ import {
   QdPageModule,
   QdSectionModule,
 } from '@quadrel-enterprise-ui/framework';
+import { catchError, of } from 'rxjs';
 import { LineService } from '../../core/line.service';
 import { toProblemDetail } from '../../core/problem-detail';
 
@@ -22,11 +24,35 @@ export class LineDetailComponent {
   private readonly notifications = inject(QdNotificationsService);
 
   private readonly id = this.route.snapshot.paramMap.get('id') as string;
-  private readonly etag = signal('');
 
-  readonly line = signal<{ left: number; right: number; businessPartnerId: string; canDelete: boolean } | null>(
-    null,
+  /**
+   * A single fetch, not a live subscription: `LineService.get` completes after its one HTTP
+   * response, so this never re-emits on its own -- matching the old subscribe-once-in-constructor
+   * behavior, just expressed as a signal instead of manual `.set()` calls. A failed fetch (e.g.
+   * 404) is caught here rather than left to `toSignal`'s default of rethrowing on read, since we
+   * want to navigate back to the list, not crash the detail page.
+   */
+  private readonly lineWithETag = toSignal(
+    this.lineService.get(this.id).pipe(
+      catchError(() => {
+        this.goBackToList();
+        return of(undefined);
+      }),
+    ),
   );
+
+  readonly line = computed(() => {
+    const result = this.lineWithETag();
+    if (!result) {
+      return null;
+    }
+    return {
+      left: result.line.left,
+      right: result.line.right,
+      businessPartnerId: result.line.businessPartnerId,
+      canDelete: !!result.line._links.delete,
+    };
+  });
 
   /**
    * `pageTypeConfig.delete` is only included when the fetched Line actually carries a `delete`
@@ -51,26 +77,12 @@ export class LineDetailComponent {
     };
   });
 
-  constructor() {
-    this.lineService.get(this.id).subscribe({
-      next: ({ line, etag }) => {
-        this.etag.set(etag);
-        this.line.set({
-          left: line.left,
-          right: line.right,
-          businessPartnerId: line.businessPartnerId,
-          canDelete: !!line._links.delete,
-        });
-      },
-      error: () => this.goBackToList(),
-    });
-  }
-
   onDelete(): void {
     if (!window.confirm('Delete this line? This cannot be undone.')) {
       return;
     }
-    this.lineService.delete(this.id, this.etag()).subscribe({
+    const etag = this.lineWithETag()?.etag ?? '';
+    this.lineService.delete(this.id, etag).subscribe({
       next: () => {
         this.notifications.add('', { type: 'success', i18n: 'i18n.lines.detail.deleteSuccess', showAsSnackbar: true });
         this.goBackToList();
