@@ -26,17 +26,27 @@ jobs:
           java-version: '25'
           cache: maven
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Install Graphviz (dot executable required by PlantUML diagrams)
         run: sudo apt-get update && sudo apt-get install -y graphviz
 
-      - name: Build (tests, REST Docs snippets, Modulith docs, Asciidoctor)
+      - name: Install frontend dependencies and Playwright browser
+        working-directory: optimistic-locking-ui
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Build (tests, REST Docs snippets, Modulith docs, Asciidoctor, overview screenshot)
         run: ./mvnw --batch-mode --no-transfer-progress package
 
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: target/generated-docs
+          path: optimistic-locking-web/target/generated-docs
 
   deploy:
     needs: build
