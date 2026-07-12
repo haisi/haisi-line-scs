@@ -65,6 +65,10 @@ describe('LineDetailComponent', () => {
     const deleteButton = page.elementLocator(document.querySelector('[data-test-id="delete-button"]')!);
     await expect.element(deleteButton).toBeVisible();
 
+    // Default test iframe viewport is mobile-sized; widen it to match the desktop screenshot
+    // already used for the overview page (see screenshot-overview.mjs) before capturing this one.
+    await page.viewport(1280, 800);
+
     // No explicit `path`: Vitest resolves it against its own ephemeral build output dir, not this
     // source file, so an explicit relative path here just trips Vite's server.fs.strict sandbox.
     // take-component-screenshots.sh (optimistic-locking-web/) locates the default output instead.
