@@ -1,5 +1,6 @@
 {
   "i18n.app.title": "Optimistic Locking Demo",
+  "i18n.nav.lines": "Lines",
   "i18n.lines.overview.title": "Lines",
   "i18n.lines.overview.table.id": "Id",
   "i18n.lines.overview.table.left": "Left",
