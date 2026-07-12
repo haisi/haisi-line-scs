@@ -119,9 +119,14 @@
         </dependency>
 
         <dependency>
+            <!-- Normally test-only, but also used at runtime under the "local" Spring profile
+            (see shared/web/localdev/) to mint demo bearer tokens against an in-process mock JWKS
+            endpoint, there being no real Keycloak realm for this teaching repo to log in to.
+            LocalDevAuthConfig gates all of that behind @Profile("local"), so it's inert unless
+            explicitly activated; kept at ordinary (non-test) scope so those beans are actually on
+            the runtime classpath for `spring-boot:run`, not just for tests. -->
             <groupId>ch.admin.bit.jeap</groupId>
             <artifactId>jeap-spring-boot-security-starter-test</artifactId>
-            <scope>test</scope>
         </dependency>
 
         <dependency>
