@@ -3,16 +3,11 @@ package li.selman.optimisticlocking.line;
 import jakarta.transaction.Transactional;
 import java.time.Instant;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.function.Consumer;
 import li.selman.optimisticlocking.shared.IfMatch;
 import li.selman.optimisticlocking.shared.PreconditionRequired;
 import li.selman.optimisticlocking.shared.StaleStateIdentified;
-import li.selman.optimisticlocking.shared.idempotency.IdempotencyKey;
-import li.selman.optimisticlocking.shared.idempotency.IdempotencyKeyRepository;
-import li.selman.optimisticlocking.shared.idempotency.IdempotencyKeyReused;
 import org.jmolecules.architecture.onion.simplified.ApplicationRing;
-import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 
 @ApplicationRing
@@ -20,17 +15,11 @@ import org.springframework.stereotype.Service;
 public class LineService {
 
     private final LineRepository repo;
-    private final IdempotencyKeyRepository idempotencyKeyRepository;
     private final ManualOperationRepository manualOperationRepository;
     private final LineAuthorization authorization;
 
-    LineService(
-            LineRepository repo,
-            IdempotencyKeyRepository idempotencyKeyRepository,
-            ManualOperationRepository manualOperationRepository,
-            LineAuthorization authorization) {
+    LineService(LineRepository repo, ManualOperationRepository manualOperationRepository, LineAuthorization authorization) {
         this.repo = repo;
-        this.idempotencyKeyRepository = idempotencyKeyRepository;
         this.manualOperationRepository = manualOperationRepository;
         this.authorization = authorization;
     }
@@ -70,54 +59,36 @@ public class LineService {
     }
 
     @Transactional
-    public Line moveLeft(LineId id, IfMatch ifMatch, int by, @Nullable String idempotencyKey) {
+    public Line moveLeft(LineId id, IfMatch ifMatch, int by) {
         LineCommand.MoveLeft command = new LineCommand.MoveLeft(by);
-        return move(id, command, "left", by, ifMatch, idempotencyKey, line -> line.moveLeft(command));
+        return move(id, command, "left", by, ifMatch, line -> line.moveLeft(command));
     }
 
     @Transactional
-    public Line moveRight(LineId id, IfMatch ifMatch, int by, @Nullable String idempotencyKey) {
+    public Line moveRight(LineId id, IfMatch ifMatch, int by) {
         LineCommand.MoveRight command = new LineCommand.MoveRight(by);
-        return move(id, command, "right", by, ifMatch, idempotencyKey, line -> line.moveRight(command));
+        return move(id, command, "right", by, ifMatch, line -> line.moveRight(command));
     }
 
     /**
      * Gate order mirrors the talk's "Order matters" pipeline, with edit permission (data
      * authorization) checked as soon as the line is loaded, before its version is even inspected:
-     * 1. Idempotency-Key: a recognised retry short-circuits here, skipping every gate below.
-     * 2. Precondition: If-Match is mandatory for a move (428 if absent, 412 if stale).
-     * 3. Edit permission: only a caller holding line_#create for the line's own business partner
+     * 1. Precondition: If-Match is mandatory for a move (428 if absent, 412 if stale).
+     * 2. Edit permission: only a caller holding line_#create for the line's own business partner
      *    may move it (403 otherwise) -- re-checked against the line's stored businessPartnerId,
      *    not the caller-supplied X-Partner-Id header, same defense-in-depth create already gets.
-     * 4. Business invariants, enforced on the aggregate root (422 on violation).
-     * 5. Version CAS at commit, via the forced-increment read (409 on a lost race).
-     * The idempotency record -- and, alongside it, the {@link ManualOperation} audit entry -- is
-     * staged in the same transaction as the mutation, so a lost CAS rolls all three back together.
-     * A recognised idempotency-key replay (gate 1) returns before either write, since it reports
-     * the same logical move again rather than performing (or recording) a new one.
+     * 3. Business invariants, enforced on the aggregate root (422 on violation).
+     * 4. Version CAS at commit, via the forced-increment read (409 on a lost race).
+     *
+     * <p>Idempotency-Key handling no longer lives here: {@code shared.web.IdempotencyFilter} picks
+     * it up before the request ever reaches this controller/service, replaying a recognised retry's
+     * stored response without invoking this method at all (so a replay still can't duplicate the
+     * {@link ManualOperation} audit entry below -- it simply never runs a second time). That moves
+     * the idempotency record's write out of this method's transaction, onto its own, separate
+     * commit -- see {@code IdempotencyService}'s Javadoc for why that trade-off is acceptable here
+     * (the version CAS below remains the real safety net against a double-apply).
      */
-    private Line move(
-            LineId id,
-            LineCommand command,
-            String side,
-            int by,
-            IfMatch ifMatch,
-            @Nullable String idempotencyKey,
-            Consumer<Line> apply) {
-        String fingerprint = command.toString();
-        if (idempotencyKey != null) {
-            UUID key = UUID.fromString(idempotencyKey);
-            Optional<IdempotencyKey> priorAttempt = idempotencyKeyRepository.findById(key);
-            if (priorAttempt.isPresent()) {
-                if (!priorAttempt.get().getFingerprint().equals(fingerprint)) {
-                    throw new IdempotencyKeyReused(key); // 422 Unprocessable Content
-                }
-                Line replay = repo.findById(id).orElseThrow(() -> new LineNotFound(id.id()));
-                authorization.assertCanEdit(replay);
-                return replay;
-            }
-        }
-
+    private Line move(LineId id, LineCommand command, String side, int by, IfMatch ifMatch, Consumer<Line> apply) {
         if (ifMatch.isAbsent()) {
             throw new PreconditionRequired(id.id()); // 428 Precondition Required
         }
@@ -135,10 +106,6 @@ public class LineService {
                 "%s point moved by %d".formatted(side, by),
                 authorization.currentSubject(),
                 Instant.now()));
-
-        if (idempotencyKey != null) {
-            idempotencyKeyRepository.save(new IdempotencyKey(UUID.fromString(idempotencyKey), fingerprint));
-        }
         return line; // commit performs the forced-increment CAS -> 409 on a lost race
     }
 }

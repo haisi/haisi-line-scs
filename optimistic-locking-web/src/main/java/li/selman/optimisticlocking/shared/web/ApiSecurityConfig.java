@@ -30,7 +30,10 @@ public class ApiSecurityConfig {
      *
      * <p>{@link BusinessPartnerFilter} is added after {@link AuthorizationFilter} so it only ever
      * runs for a request that has already cleared {@code fullyAuthenticated()} -- its business
-     * partner check assumes a real {@code JeapAuthenticationToken} is present.
+     * partner check assumes a real {@code JeapAuthenticationToken} is present. {@link
+     * IdempotencyFilter} is added after that again, so it only ever reserves/replays for a request
+     * that also cleared partner-affiliation -- nothing is ever cached for a request either of the
+     * two filters ahead of it would have rejected anyway.
      */
     @Bean
     @Order(Ordered.LOWEST_PRECEDENCE - 1)
@@ -38,14 +41,16 @@ public class ApiSecurityConfig {
             HttpSecurity http,
             JeapJwtDecoderFactory jwtDecoderFactory,
             AuthoritiesResolver authoritiesResolver,
-            BusinessPartnerFilter businessPartnerFilter) {
+            BusinessPartnerFilter businessPartnerFilter,
+            IdempotencyFilter idempotencyFilter) {
         http.securityMatcher("/lines/**")
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize.anyRequest().fullyAuthenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.decoder(jwtDecoderFactory.createJwtDecoder())
                         .jwtAuthenticationConverter(new JeapAuthenticationConverter(authoritiesResolver))))
-                .addFilterAfter(businessPartnerFilter, AuthorizationFilter.class);
+                .addFilterAfter(businessPartnerFilter, AuthorizationFilter.class)
+                .addFilterAfter(idempotencyFilter, BusinessPartnerFilter.class);
         return http.build();
     }
 
@@ -96,6 +101,14 @@ public class ApiSecurityConfig {
     @Bean
     FilterRegistrationBean<BusinessPartnerFilter> disableAutoRegistration(BusinessPartnerFilter filter) {
         FilterRegistrationBean<BusinessPartnerFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
+    }
+
+    /** Same reasoning as {@link #disableAutoRegistration} above, for {@link IdempotencyFilter}. */
+    @Bean
+    FilterRegistrationBean<IdempotencyFilter> disableIdempotencyFilterAutoRegistration(IdempotencyFilter filter) {
+        FilterRegistrationBean<IdempotencyFilter> registration = new FilterRegistrationBean<>(filter);
         registration.setEnabled(false);
         return registration;
     }

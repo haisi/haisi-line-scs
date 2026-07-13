@@ -30,12 +30,34 @@ CREATE TABLE line
 --     CONSTRAINT uq_line_right UNIQUE (right_id),
 );
 
--- Not FK'd to line: a record of "this Idempotency-Key was already applied" should outlive
--- the line it was applied to (e.g. the line could later be deleted).
-CREATE TABLE idempotency_key
+-- Generic record of "a request with this Idempotency-Key was already handled", written by
+-- IdempotencyFilter -- not specific to Line at all (any /lines/** request carrying the header
+-- goes through it), so unlike manual_operation below it isn't even scoped to a line id. Not FK'd
+-- to anything for the same reason the old line-specific version wasn't: a replay record should
+-- outlive whatever resource it was originally applied to.
+CREATE TABLE idempotency_record
 (
-    id          UUID PRIMARY KEY,
-    fingerprint VARCHAR(255) NOT NULL
+    id               VARCHAR(255) PRIMARY KEY,
+    fingerprint      VARCHAR(255) NOT NULL,
+    status           VARCHAR(20)  NOT NULL,
+    response_status  INTEGER,
+    response_headers CLOB,
+    response_body    BLOB,
+    created_at       TIMESTAMP    NOT NULL,
+    completed_at     TIMESTAMP
+);
+
+-- IdempotencyHousekeeping's cleanup cron is guarded by ShedLock so only one instance runs it when
+-- this app is scaled horizontally. Shape matches jeap-messaging-outbox's own shedlock table
+-- exactly (see that library's docs), even though this repo doesn't depend on it, for consistency
+-- with the wider jeap ecosystem's convention.
+CREATE TABLE shedlock
+(
+    name       VARCHAR(64)  NOT NULL,
+    lock_until TIMESTAMP    NOT NULL,
+    locked_at  TIMESTAMP    NOT NULL,
+    locked_by  VARCHAR(255) NOT NULL,
+    PRIMARY KEY (name)
 );
 
 -- Same reasoning as idempotency_key above: not FK'd to line, so this audit trail survives a

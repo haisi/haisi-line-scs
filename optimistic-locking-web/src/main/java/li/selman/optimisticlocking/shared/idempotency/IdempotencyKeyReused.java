@@ -1,18 +1,22 @@
 package li.selman.optimisticlocking.shared.idempotency;
 
-import java.util.UUID;
+import org.jmolecules.architecture.onion.simplified.DomainRing;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.ErrorResponseException;
 
 /**
- * Thrown when an Idempotency-Key is replayed with a different payload than the one it
- * was originally recorded against. In HTTP world -> 422 Unprocessable Entity: the client
- * is reusing a key it shouldn't, rather than genuinely retrying the same operation.
+ * An {@code Idempotency-Key} was reused for a request that fingerprints differently from the one
+ * it was originally recorded against -- the client is reusing a key it shouldn't, rather than
+ * genuinely retrying the same request. Constructed directly by {@code IdempotencyFilter} (which
+ * runs before Spring MVC dispatch, so nothing throws/catches this the way a domain exception
+ * normally would) purely to reuse its {@link #getBody()} ProblemDetail in the same RFC 9457 shape
+ * every other error response in this app uses.
  */
+@DomainRing
 public class IdempotencyKeyReused extends ErrorResponseException {
 
-    public IdempotencyKeyReused(UUID key) {
+    public IdempotencyKeyReused(String key) {
         super(
                 HttpStatus.UNPROCESSABLE_CONTENT,
                 ProblemDetail.forStatusAndDetail(

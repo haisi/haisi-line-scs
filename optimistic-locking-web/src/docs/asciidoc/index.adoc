@@ -315,14 +315,92 @@ move endpoints -- carries a fresh `ETag`, so a client always has what it needs t
 rely on tracking the server's version alone -- for example, a client that must retry after a
 network timeout without knowing whether its first attempt actually landed.
 
+Unlike the other concerns in this guide, this one isn't implemented in `LineController`/`LineService`
+at all: `IdempotencyFilter` (see `shared.web`) is a single, generic `Filter` wired into the security
+chain ahead of every controller. It only ever engages for an endpoint explicitly opted in via the
+`@Idempotent` annotation -- today, only the four move endpoints carry it. An endpoint without the
+annotation ignores `Idempotency-Key` entirely, even if a client sends it, exactly like
+https://docs.stripe.com/api/idempotent_requests[Stripe's own idempotent-request API], which
+explicitly excludes `GET`/`DELETE` ("idempotent by definition... has no effect"); see
+`LineControllerITTest.IdempotencyFilterBehavior#getAndDelete_ignoreTheIdempotencyKeyHeaderEntirely`.
+For an opted-in endpoint, the filter fingerprints the request (method, URI, `X-Partner-Id`, the
+caller's subject, and body) and either replays a previously stored response, rejects a fingerprint
+mismatch or an in-flight duplicate, or lets a fresh request through and stores what it produced --
+the controller/service layer below never even knows a replay happened.
+
 The gate order matters: a recognised `Idempotency-Key` is checked *before* `If-Match` is even
-looked at, so a retry replays the original result even if its own `If-Match` has since gone stale:
+looked at (the filter runs before the request ever reaches the controller), so a retry replays the
+original result even if its own `If-Match` has since gone stale:
 
 operation::move-left-idempotent-replay[snippets='request-headers,http-request,http-response']
 
 Reusing the same key with a *different* request body -- a different fingerprint for the same key --
 is treated as a client error (`422`), not a replay; see
-`LineControllerITTest.PutMove#reusingIdempotencyKeyWithDifferentBody_returns422`. The idempotency
-record is written in the *same* transaction as the move itself, so a lost version CAS rolls both
-back together -- a failed attempt never leaves behind a replay record that could mask a later,
-genuine retry.
+`LineControllerITTest.PutMove#reusingIdempotencyKeyWithDifferentBody_returns422`. Two concurrent
+requests racing the very same fresh key is a different case again: exactly one wins the underlying
+insert, and every other one gets `409 Conflict` immediately, without ever reaching `LineService` --
+see `LineControllerITTest.IdempotencyFilterBehavior#concurrentRequestsWithSameFreshIdempotencyKey_onlyOneExecutes`.
+
+Only a successful (`2xx`) response gets stored for replay. A `422`/`412`/other non-2xx outcome
+releases the reservation instead of freezing that failure under the key forever, so a genuine retry
+-- even one that fingerprints identically -- executes for real against whatever the current state is;
+see `LineControllerITTest.IdempotencyFilterBehavior#nonSuccessResponseUnderIdempotencyKey_abandonsReservationSoRetryCanSucceed`.
+
+This is a deliberate change from an earlier version of this app, where the idempotency record was
+written in the *same* database transaction as the move itself, so a lost version CAS rolled both
+back together. Moving the mechanism to a filter means that guarantee no longer holds quite as
+tightly: the reservation commits *before* the request is dispatched, and the stored response commits
+*after* the business transaction already has -- two or three separate transactions, not one. A crash
+in between leaves a stale, incomplete reservation; a retry then re-executes for real (once that
+reservation is old enough to be treated as abandoned) rather than replaying -- but it still carries
+its *original* `If-Match`, which the intervening state change has already made stale, so it lands on
+the ordinary `412` path above rather than silently double-applying. The version CAS remains the real
+safety net underneath idempotency here, not the replay record itself.
+
+A separate, `@SchedulerLock`-guarded (https://github.com/lukas-krecan/ShedLock[ShedLock]) cron job,
+`IdempotencyHousekeeping`, deletes idempotency records older than 24 hours so the table doesn't grow
+forever -- see `IdempotencyHousekeepingTest` for the executable proof, including that the underlying
+lock is genuinely taken (not just that the cleanup query ran).
+
+== Non-functional concern: logging &amp; tracing
+
+Every request this app handles is logged and traced through three
+https://jeap-admin-ch.github.io/docs/building-blocks/spring-boot-starters/jeap-spring-boot-starters/index.html[jEAP
+Spring Boot starters], all pulled in transitively by `jeap-spring-boot-application-starter` and
+`jeap-spring-boot-monitoring-starter` (see `pom.xml`) -- no custom logging code lives in this repo
+at all:
+
+* *`jeap-spring-boot-monitoring-starter`* wires up Micrometer Tracing, bridged to OpenTelemetry.
+  Every inbound HTTP request becomes a span with its own `traceId`/`spanId`.
+* *`jeap-spring-boot-logging-starter`* bridges that span into SLF4J's MDC, so every log line
+  written while handling a request -- not just one summary line -- carries the same `traceId`,
+  letting an operator grep one id and see every log line one request caused, including in whichever
+  *other* jEAP services that request went on to call, since the id (and the `JEAP-APPLICATION-NAME`
+  header identifying the caller) propagates across the call.
+* *`jeap-spring-boot-rest-request-tracing`* additionally logs one summary line per request/response
+  under the `ch.admin.bit.jeap.log.RestRequestTracer` logger -- method, URI, status, caller, user,
+  and elapsed time -- at `DEBUG`, suppressed by default in production. `application.properties`
+  turns it on (`logging.level.ch.admin.bit.jeap.log.RestRequestTracer=DEBUG`) so it's visible in
+  this teaching repo; it also sets `management.tracing.sampling.probability=1.0` so *every* request
+  is sampled rather than the 1-in-10 Spring Boot default, which would otherwise make the concept
+  intermittently invisible at this app's low traffic volume.
+
+A real, unmodified log line captured from a running instance of this app (console format; `cloudwatch`/
+`rhos` platforms emit the same fields as JSON instead, via `jeap.logging.platform`):
+
+[source]
+----
+2026-07-13 14:18:20,010 DEBUG [optimistic-locking,d1841ba0d612456731cbc08468cd8f3e,f6d9531aefc23854] c.a.bit.jeap.log.RestRequestTracer - PUT http://localhost:8080/lines/a1ce5faf-.../left/move-right result=200 caller=null user=demo-administrator
+----
+
+The bracketed triple after the app name is `[app,traceId,spanId]` -- the same two values available
+in the MDC (keys `traceId`/`spanId`) to every other log statement emitted while that request was
+being handled.
+
+`LineControllerITTest.LoggingAndTracing` is the executable proof: it attaches a Logback
+`ListAppender` directly to the `RestRequestTracer` logger around a real HTTP call through the full
+filter chain, then asserts on what actually got logged --
+`requestIsLoggedWithATraceIdAndASpanIdInMdc` checks the response line's `result=200` and that its
+MDC carries a non-blank `traceId`/`spanId`; `unrelatedRequests_getDifferentTraceIds` checks that two
+independent requests get two different ids, which is the whole point: a fixed, per-process id would
+be worthless for distinguishing one request from another.

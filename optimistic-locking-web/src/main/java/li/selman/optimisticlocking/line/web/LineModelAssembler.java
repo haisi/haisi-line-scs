@@ -79,10 +79,10 @@ class LineModelAssembler {
                 line.getLeftPoint().getNumberOfUpdates()));
         boolean authorized = lineAuthorization.can(LineCommand.MoveLeft.class, line);
         model.addIf(authorized && line.canMoveLeftPointLeft(), () -> linkTo(methodOn(LineController.class)
-                        .moveLeftPointLeft(line.getId(), IfMatch.of(null), null, null, new MoveRequest(1)))
+                        .moveLeftPointLeft(line.getId(), IfMatch.of(null), null, new MoveRequest(1)))
                 .withRel("moveLeft"));
         model.addIf(authorized && line.canMoveLeftPointRight(), () -> linkTo(methodOn(LineController.class)
-                        .moveLeftPointRight(line.getId(), IfMatch.of(null), null, null, new MoveRequest(1)))
+                        .moveLeftPointRight(line.getId(), IfMatch.of(null), null, new MoveRequest(1)))
                 .withRel("moveRight"));
         return model;
     }
@@ -94,10 +94,10 @@ class LineModelAssembler {
                 line.getRightPoint().getNumberOfUpdates()));
         boolean authorized = lineAuthorization.can(LineCommand.MoveRight.class, line);
         model.addIf(authorized && line.canMoveRightPointLeft(), () -> linkTo(methodOn(LineController.class)
-                        .moveRightPointLeft(line.getId(), IfMatch.of(null), null, null, new MoveRequest(1)))
+                        .moveRightPointLeft(line.getId(), IfMatch.of(null), null, new MoveRequest(1)))
                 .withRel("moveLeft"));
         model.addIf(authorized && line.canMoveRightPointRight(), () -> linkTo(methodOn(LineController.class)
-                        .moveRightPointRight(line.getId(), IfMatch.of(null), null, null, new MoveRequest(1)))
+                        .moveRightPointRight(line.getId(), IfMatch.of(null), null, new MoveRequest(1)))
                 .withRel("moveRight"));
         return model;
     }

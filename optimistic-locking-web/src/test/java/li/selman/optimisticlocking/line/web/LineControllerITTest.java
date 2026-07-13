@@ -6,6 +6,10 @@ import static org.springframework.boot.test.context.SpringBootTest.WebEnvironmen
 import ch.admin.bit.jeap.security.resource.token.JeapAuthenticationContext;
 import ch.admin.bit.jeap.security.test.jws.JwsBuilderFactory;
 import ch.admin.bit.jeap.security.test.resource.configuration.JeapOAuth2IntegrationTestResourceConfiguration;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +28,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureRestTestClient;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -741,7 +746,9 @@ class LineControllerITTest {
                     .jsonPath("$._embedded.operations[0].operation")
                     .isEqualTo("MoveLeft")
                     .jsonPath("$._embedded.operations[0].detail")
-                    .value(String.class, detail -> assertThat(detail).contains("left").contains("2"))
+                    .value(
+                            String.class,
+                            detail -> assertThat(detail).contains("left").contains("2"))
                     .jsonPath("$._embedded.operations[0].performedBy")
                     .isEqualTo("test-subject")
                     .jsonPath("$._embedded.operations[0].performedAt")
@@ -1704,6 +1711,254 @@ class LineControllerITTest {
                     .exchange()
                     .expectStatus()
                     .isForbidden();
+        }
+    }
+
+    /**
+     * {@code IdempotencyFilter} (see {@code shared.web}) replaces the old, {@code Line}-embedded
+     * idempotency mechanism -- {@link PutMove}'s {@code retryingWithSameIdempotencyKey_isANoOp}/
+     * {@code reusingIdempotencyKeyWithDifferentBody_returns422} above already cover the two cases
+     * that mechanism also handled (an HTTP-visible behaviour that deliberately didn't change). This
+     * class covers what's genuinely new: the filter's own reservation-conflict and
+     * abandon-on-failure behaviour.
+     */
+    @Nested
+    class IdempotencyFilterBehavior {
+
+        /**
+         * Racers share one fresh key: insert-first-wins means exactly one reservation succeeds and
+         * actually executes; every other racer sees {@code IdempotencyKeyInUse} (409) straight from
+         * the filter, without ever reaching {@link LineService#moveLeft}.
+         */
+        @Test
+        void concurrentRequestsWithSameFreshIdempotencyKey_onlyOneExecutes() throws Exception {
+            UUID id = UUID.randomUUID();
+            lineRepository.save(
+                    LineFixture.newBuilder().id(id).line(3, 9).lockVersion(1).build());
+            String idempotencyKey = UUID.randomUUID().toString();
+
+            int threadCount = 8;
+            CyclicBarrier barrier = new CyclicBarrier(threadCount);
+            ExecutorService pool = Executors.newFixedThreadPool(threadCount);
+            List<Integer> statuses;
+            try {
+                List<Callable<Integer>> racers = new ArrayList<>();
+                for (int i = 0; i < threadCount; i++) {
+                    racers.add(() -> {
+                        barrier.await();
+                        AtomicInteger status = new AtomicInteger();
+                        authedClient
+                                .put()
+                                .uri("/lines/{id}/left/move-right", id)
+                                .header(HttpHeaders.IF_MATCH, "\"1\"")
+                                .header("Idempotency-Key", idempotencyKey)
+                                .body(new MoveRequest(1))
+                                .exchange()
+                                .expectStatus()
+                                .value(status::set);
+                        return status.get();
+                    });
+                }
+                List<Future<Integer>> futures = pool.invokeAll(racers);
+                statuses = new ArrayList<>();
+                for (Future<Integer> future : futures) {
+                    statuses.add(future.get());
+                }
+            } finally {
+                pool.shutdown();
+            }
+
+            long successes = statuses.stream().filter(status -> status == 200).count();
+            long conflicts = statuses.stream().filter(status -> status == 409).count();
+
+            assertThat(successes).isEqualTo(1);
+            assertThat(conflicts).isEqualTo(threadCount - 1);
+
+            // exactly one execution of the shared key -> exactly one audit entry
+            authedClient
+                    .get()
+                    .uri("/lines/{id}", id)
+                    .accept(MediaTypes.HAL_JSON)
+                    .exchange()
+                    .expectBody()
+                    .jsonPath("$._embedded.operations.length()")
+                    .isEqualTo(1);
+        }
+
+        /**
+         * A non-2xx outcome must not be cached as a permanent "this key always fails" record --
+         * {@code IdempotencyService.abandon} deletes the reservation instead, so a genuine retry
+         * (even one that fingerprints identically: same method/path/body) executes for real
+         * against whatever the current state is, rather than replaying the stale failure forever.
+         */
+        @Test
+        void nonSuccessResponseUnderIdempotencyKey_abandonsReservationSoRetryCanSucceed() {
+            UUID id = UUID.randomUUID();
+            lineRepository.save(
+                    LineFixture.newBuilder().id(id).line(0, 5).lockVersion(1).build());
+            String idempotencyKey = UUID.randomUUID().toString();
+
+            // left is already at zero: violates the invariant -> 422, a non-2xx outcome that must
+            // abandon the reservation rather than caching a permanent failure under this key.
+            authedClient
+                    .put()
+                    .uri("/lines/{id}/left/move-left", id)
+                    .header(HttpHeaders.IF_MATCH, "\"1\"")
+                    .header("Idempotency-Key", idempotencyKey)
+                    .body(new MoveRequest(1))
+                    .exchange()
+                    .expectStatus()
+                    .isEqualTo(422);
+
+            // An unrelated move (no Idempotency-Key) changes the line's state so the exact same
+            // request as above would now succeed.
+            authedClient
+                    .put()
+                    .uri("/lines/{id}/left/move-right", id)
+                    .header(HttpHeaders.IF_MATCH, "\"1\"")
+                    .body(new MoveRequest(2))
+                    .exchange()
+                    .expectStatus()
+                    .isOk()
+                    .expectHeader()
+                    .valueEquals(HttpHeaders.ETAG, "\"2\"");
+
+            // Retrying with the exact same key/method/path/body as the original 422: had that
+            // attempt been cached for replay, this would keep returning the stale 422 forever.
+            // Since it was abandoned instead, this genuinely re-executes against the now-different
+            // state and succeeds.
+            authedClient
+                    .put()
+                    .uri("/lines/{id}/left/move-left", id)
+                    .header(HttpHeaders.IF_MATCH, "\"2\"")
+                    .header("Idempotency-Key", idempotencyKey)
+                    .body(new MoveRequest(1))
+                    .exchange()
+                    .expectStatus()
+                    .isOk();
+        }
+
+        /**
+         * {@code GET}/{@code DELETE} aren't annotated {@code @Idempotent} (see that annotation's
+         * Javadoc: support is opt-in, matching Stripe's own stance that already-idempotent/safe
+         * methods shouldn't participate at all) -- sending the header to either has no effect
+         * whatsoever: no reservation row is ever created, and repeating the same call just
+         * re-executes normally rather than being replayed or rejected.
+         */
+        @Test
+        void getAndDelete_ignoreTheIdempotencyKeyHeaderEntirely() {
+            UUID id = UUID.randomUUID();
+            lineRepository.save(LineFixture.newBuilder().id(id).build());
+            String idempotencyKey = UUID.randomUUID().toString();
+
+            authedClient
+                    .get()
+                    .uri("/lines/{id}", id)
+                    .header("Idempotency-Key", idempotencyKey)
+                    .exchange()
+                    .expectStatus()
+                    .isOk();
+
+            // Same key, twice, on DELETE: if the header had any effect, the second call would
+            // either replay the first's 204 or be rejected as in-progress/reused. Since GET/DELETE
+            // ignore it, both simply execute for real -- exactly DELETE's own already-idempotent
+            // behaviour (see Delete#isIdempotent), completely unaffected by the header.
+            authedClient
+                    .delete()
+                    .uri("/lines/{id}", id)
+                    .header("Idempotency-Key", idempotencyKey)
+                    .exchange()
+                    .expectStatus()
+                    .isNoContent();
+            authedClient
+                    .delete()
+                    .uri("/lines/{id}", id)
+                    .header("Idempotency-Key", idempotencyKey)
+                    .exchange()
+                    .expectStatus()
+                    .isNoContent();
+
+            Integer rows = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM idempotency_record WHERE id = ?", Integer.class, idempotencyKey);
+            assertThat(rows).isZero();
+        }
+    }
+
+    /**
+     * jeap-spring-boot-monitoring-starter (Micrometer Tracing bridged to OpenTelemetry) and
+     * jeap-spring-boot-logging-starter (its MDC bridge, plus jeap-spring-boot-rest-request-tracing's
+     * {@code RestRequestTracer}, both pulled in transitively -- see application.properties for the
+     * config that makes both of these visible instead of suppressed by default) are what let an
+     * operator follow one request across every log line it causes, in this service and any other
+     * jEAP service it calls, and see a one-line summary of every request/response this service
+     * handled. Asserted here by attaching a {@link ListAppender} directly to the logger
+     * {@code RestRequestTracer} logs under, rather than by asserting on this app's own log file
+     * (there isn't one by default -- {@code rollingLogFile} is an opt-in profile).
+     */
+    @Nested
+    class LoggingAndTracing {
+
+        private static final String REST_REQUEST_TRACER_LOGGER = "ch.admin.bit.jeap.log.RestRequestTracer";
+
+        @Test
+        void requestIsLoggedWithATraceIdAndASpanIdInMdc() {
+            UUID id = UUID.randomUUID();
+            lineRepository.save(LineFixture.newBuilder().id(id).build());
+
+            Logger tracerLogger = (Logger) LoggerFactory.getLogger(REST_REQUEST_TRACER_LOGGER);
+            ListAppender<ILoggingEvent> appender = new ListAppender<>();
+            appender.start();
+            tracerLogger.addAppender(appender);
+            try {
+                authedClient.get().uri("/lines/{id}", id).exchange().expectStatus().isOk();
+            } finally {
+                tracerLogger.detachAppender(appender);
+            }
+
+            ILoggingEvent requestLog = appender.list.stream()
+                    .filter(event -> event.getFormattedMessage().contains("/lines/" + id))
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("RestRequestTracer never logged a line for /lines/" + id
+                            + ", captured instead: " + appender.list));
+
+            // method/URI/result=<status> is RestRequestTracer's own response-line format.
+            assertThat(requestLog.getLevel()).isEqualTo(Level.DEBUG);
+            assertThat(requestLog.getFormattedMessage()).contains("GET").contains("result=200");
+
+            // Bridged in by jeap-spring-boot-logging-starter from the request's Micrometer/OTel
+            // span -- the same two values a downstream jEAP service would see propagated onto its
+            // own inbound request, letting an operator follow this one call across the fleet.
+            Map<String, String> mdc = requestLog.getMDCPropertyMap();
+            assertThat(mdc.get("traceId")).isNotBlank();
+            assertThat(mdc.get("spanId")).isNotBlank();
+        }
+
+        /**
+         * Two unrelated requests get two different traceIds -- proof the id genuinely identifies
+         * *this* request/span rather than being some fixed, per-process value that would defeat
+         * the entire point of tracing.
+         */
+        @Test
+        void unrelatedRequests_getDifferentTraceIds() {
+            Logger tracerLogger = (Logger) LoggerFactory.getLogger(REST_REQUEST_TRACER_LOGGER);
+            ListAppender<ILoggingEvent> appender = new ListAppender<>();
+            appender.start();
+            tracerLogger.addAppender(appender);
+            try {
+                authedClient.get().uri("/lines").exchange().expectStatus().isOk();
+                authedClient.get().uri("/lines").exchange().expectStatus().isOk();
+            } finally {
+                tracerLogger.detachAppender(appender);
+            }
+
+            List<String> traceIds = appender.list.stream()
+                    .map(event -> event.getMDCPropertyMap().get("traceId"))
+                    .toList();
+
+            assertThat(traceIds).hasSize(2);
+            assertThat(traceIds.get(0)).isNotBlank();
+            assertThat(traceIds.get(1)).isNotBlank();
+            assertThat(traceIds.get(0)).isNotEqualTo(traceIds.get(1));
         }
     }
 }

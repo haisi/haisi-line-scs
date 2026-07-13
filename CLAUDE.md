@@ -75,16 +75,41 @@ command that includes that module (a full reactor build, `-pl optimistic-locking
 `-pl optimistic-locking-web`-alone backend iteration loop described above never touches the UI
 module at all, so it skips this too, same as it skips `ng build` itself.
 
-`./mvnw package` (or `verify`/`install`) additionally screenshots the frontend into the API guide
-(see the "Web UI" section of `index.adoc`), via two `exec-maven-plugin` executions bound to
-`prepare-package` in `optimistic-locking-web/pom.xml`, both landing in
-`generated-docs.directory/images` before the doc-rendering step embeds them:
-- `take-overview-screenshot.sh` boots the app under the `local` profile and screenshots the real,
-  running Lines overview page — this one deliberately exercises the actual integration.
-- `take-component-screenshots.sh` runs `optimistic-locking-ui`'s own `npm test -- --watch=false`
-  (see above) and copies whatever `page.screenshot()` calls produced — no backend, no JVM.
+**Always run `npm run lint` in `optimistic-locking-ui` after touching any frontend file, in the same
+turn you make the change** — don't defer it to whenever the UI module next happens to get built. A
+lint error left sitting silently blocks `./mvnw install -pl optimistic-locking-ui` from ever
+producing a fresh jar, and the fast backend-only iteration loop above will happily keep resolving
+that now-stale jar without complaint. That combination is exactly how the Line detail page once
+shipped broken: the backend's API contract changed, the frontend was updated to match, but the
+installed jar never refreshed because an unrelated lint error blocked the install — see
+`check-line-detail.sh` below for the full story and the regression test that now guards against it.
+A lint failure is not something to fix "later" in this repo.
 
-`./mvnw test` alone skips both, same as it already skips the rest of the doc generation. This
+`./mvnw package` (or `verify`/`install`) additionally screenshots the frontend into the API guide
+(see the "Web UI" section of `index.adoc`) and runs a real end-to-end contract check, via three
+`exec-maven-plugin` executions bound to `prepare-package` in `optimistic-locking-web/pom.xml`:
+- `take-overview-screenshot.sh` boots the app under the `local` profile and screenshots the real,
+  running Lines overview page — this one deliberately exercises the actual integration, landing in
+  `generated-docs.directory/images` before the doc-rendering step embeds it.
+- `check-line-detail.sh` also boots the app under the `local` profile, but asserts instead of
+  screenshotting: it drives the real frontend bundle against the real backend's real HTTP responses
+  and fails the build if the Line detail page doesn't render the data it should (see
+  `optimistic-locking-ui/scripts/check-line-detail.mjs`'s own top comment). Exists because
+  `line-detail.component.spec.ts`/`edit-line-dialog.component.spec.ts` mock `LineService` entirely
+  (no real HTTP call, ever) and so cannot, by construction, notice the frontend and backend's JSON
+  contract drifting apart — which is exactly what happened once: the per-point move API redesign
+  changed `GET /lines/{id}`'s shape, the frontend was updated to match, but the *installed*
+  `optimistic-locking-ui` jar the backend actually serves was never rebuilt (blocked, in that case,
+  by an unrelated lint error elsewhere in the module — `./mvnw install -pl optimistic-locking-ui`
+  fails outright if `npm run lint` fails, see the "Frontend code quality" section below), so the
+  backend kept shipping the *old* frontend build against the *new* API and the detail page silently
+  went blank. This check would have failed the build the moment that happened, instead of shipping
+  it.
+- `take-component-screenshots.sh` runs `optimistic-locking-ui`'s own `npm test -- --watch=false`
+  (see above) and copies whatever `page.screenshot()` calls produced into
+  `generated-docs.directory/images` — no backend, no JVM.
+
+`./mvnw test` alone skips all three, same as it already skips the rest of the doc generation. This
 needs a Playwright-installed Chromium
 (`cd optimistic-locking-ui && npx playwright install chromium`, one-time) in addition to Node/npm.
 
@@ -120,23 +145,58 @@ described above and in "Frontend code quality" below.
   is the one `@RestControllerAdvice` in the app, mapping `ObjectOptimisticLockingFailureException` to
   409 — every other status comes from a domain exception in `shared`/`line` annotated `@ResponseStatus`
   (see `StaleStateIdentified` for the pattern).
-- **Service layer** (`LineService`): where optimistic-concurrency and idempotency decisions are made.
-  `create` is a PUT-style, client-generated-UUID create: identical retries are a no-op replay (200),
-  a different body for an existing id is a genuine 409 (no precondition was ever stated for create).
-  `move` (private, called by `moveLeft`/`moveRight`) runs gates in the exact order from the talk's
-  "Order matters" pipeline: **(1)** `Idempotency-Key` lookup first — a recognised key short-circuits
-  straight to a replay, skipping every gate below; a reused key with a different fingerprint is 422
-  (`IdempotencyKeyReused`); **(2)** `If-Match` is mandatory for a move (428 via `PreconditionRequired`
-  if absent, 412 via `StaleStateIdentified` if stale); **(3)** business invariants on `Line` (422 via
-  `BusinessRuleViolated`); **(4)** the forced-increment version CAS at transaction commit (409, via
-  the controller advice above). The idempotency record is staged in the *same* transaction as the
-  mutation, so a lost CAS rolls both back together.
-- **Idempotency storage**: `IdempotencyKey` (id = the client's `Idempotency-Key`, plus a fingerprint of
-  `side:by`) is intentionally minimal — a replay re-reads the *current* line state rather than storing
-  a full response snapshot, which is enough as long as nothing else touches the line between the
-  original call and its retry.
+- **Service layer** (`LineService`): where optimistic-concurrency decisions are made (idempotency is
+  a cross-cutting, filter-level concern now — see below, not this service). `create` is a PUT-style,
+  client-generated-UUID create: identical retries are a no-op replay (200), a different body for an
+  existing id is a genuine 409 (no precondition was ever stated for create). `move` (private, called
+  by `moveLeft`/`moveRight`) runs gates in the exact order from the talk's "Order matters" pipeline:
+  **(1)** `If-Match` is mandatory for a move (428 via `PreconditionRequired` if absent, 412 via
+  `StaleStateIdentified` if stale); **(2)** business invariants on `Line` (422 via
+  `BusinessRuleViolated`); **(3)** the forced-increment version CAS at transaction commit (409, via
+  the controller advice above).
+- **Idempotency (`shared/web/IdempotencyFilter`, `shared/idempotency/`)**: a generic, protocol-level
+  mechanism, not baked into `LineService`/`LineController` at all — the cross-cutting concern the
+  talk's `Idempotency-Key` section demonstrates now lives entirely in one `Filter`, wired into
+  `ApiSecurityConfig`'s `apiSecurityFilterChain` after `BusinessPartnerFilter`. Support is opt-in per
+  endpoint via the `@Idempotent` annotation (only `LineController`'s four move endpoints carry it)
+  — matching Stripe's own idempotency API, which explicitly excludes GET/DELETE ("idempotent by
+  definition, the header has no effect"); an unannotated endpoint ignores the header entirely, even
+  if a client sends it, rather than defaulting new endpoints into this behavior by accident. The
+  filter resolves the target `HandlerMethod` itself via `RequestMappingHandlerMapping` (the same
+  technique Spring Security's own `MvcRequestMatcher` uses to inspect a handler before dispatch) to
+  check for the annotation. For an opted-in request carrying the header, it fingerprints it (SHA-256
+  of method + URI + `X-Partner-Id` + caller subject + body), and either replays a stored response,
+  rejects a fingerprint reuse (422,
+  `IdempotencyKeyReused`) or an in-flight duplicate (409, `IdempotencyKeyInUse`), or lets a fresh
+  request through and stores what it produced (only 2xx responses; a non-2xx outcome abandons the
+  reservation instead of freezing a failure forever). `IdempotencyService.reserve` claims a key by
+  insert-first-wins on the `idempotency_record` table's primary key (`IdempotencyRecord` implements
+  `Persistable` specifically so `save()` always attempts a real INSERT rather than a JPA `merge`,
+  which an assigned, non-`@GeneratedValue` id would otherwise get — see that class's Javadoc); a
+  concurrent racer's constraint violation is what produces the 409. A replay never invokes
+  `LineController`/`LineService` at all, so it still can't duplicate a `ManualOperation` audit entry
+  — the same property the old, `Line`-embedded version had, now achieved architecturally rather than
+  by convention. **Trade-off worth knowing**: this moves the idempotency record's write out of the
+  business mutation's own transaction (unlike the old design) — `reserve` commits before dispatch,
+  `complete`/`abandon` commit after, so a crash in between can leave a stale reservation; a retry
+  then re-executes for real rather than replaying, but still lands on the ordinary 412 path (not a
+  double-apply) since the version CAS above remains the actual safety net. `IdempotencyHousekeeping`
+  (`shared/web/`) deletes records older than 24h hourly, guarded by ShedLock (`@SchedulerLock`, see
+  `SchedulingConfig`) so only one instance runs it when scaled horizontally — its `shedlock` table
+  shape matches jeap's own `jeap-messaging-outbox` library's convention, even though this repo
+  doesn't depend on it.
 - **Persistence**: `schema.sql` defines the H2 schema by hand (no Flyway/Liquibase); JPA entities map
   onto it directly. The app runs against an in-memory H2 database with no external services.
+- **Logging & tracing**: `jeap-spring-boot-monitoring-starter` (Micrometer Tracing bridged to
+  OpenTelemetry, actuator, Prometheus) plus the transitively-included `jeap-spring-boot-logging-starter`
+  (MDC bridge) and `jeap-spring-boot-rest-request-tracing` (`RestRequestTracer`, one summary log
+  line per request/response) give every request its own `traceId`/`spanId` in the MDC of every log
+  line it causes. `application.properties` turns on `RestRequestTracer`'s `DEBUG` logging (silent by
+  default) and samples every request (`management.tracing.sampling.probability=1.0`, vs. Spring
+  Boot's own 1-in-10 default) so the concept stays visible at this app's low traffic volume; see the
+  "Non-functional concern: logging & tracing" section of the API guide (`index.adoc`) and
+  `LineControllerITTest.LoggingAndTracing` for the executable proof (a Logback `ListAppender`
+  attached to the `RestRequestTracer` logger around a real HTTP call).
 - `LineCommand` (`CreateLine`/`MovePoint`) is a sealed interface used to carry the create/move
   intent into `LineService`. `DeleteLine` is still an unused stub — delete takes its id/`If-Match`
   as plain parameters instead, since there was never a need to route it through a command object.

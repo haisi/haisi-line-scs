@@ -16,6 +16,7 @@ import li.selman.optimisticlocking.line.LineRepository;
 import li.selman.optimisticlocking.line.LineService;
 import li.selman.optimisticlocking.shared.IfMatch;
 import li.selman.optimisticlocking.shared.IfNoneMatch;
+import li.selman.optimisticlocking.shared.web.Idempotent;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.hateoas.RepresentationModel;
@@ -125,61 +126,61 @@ public class LineController {
                 .<RepresentationModel<?>>body(lineModelAssembler.toModel(result.line()));
     }
 
+    @Idempotent
     @PutMapping("{id}/left/move-left")
     @PreAuthorize("hasRoleForPartner(@lineAuthorization.CREATE_ROLE, #partnerId)")
     @ADR(1)
     ResponseEntity<RepresentationModel<?>> moveLeftPointLeft(
             @PathVariable LineId id,
             IfMatch ifMatch,
-            @RequestHeader(name = "Idempotency-Key", required = false) @Nullable String idempotencyKey,
             @RequestHeader(name = "X-Partner-Id", required = false) @Nullable String partnerId,
             @Valid @RequestBody MoveRequest body) {
-        Line line = lineService.moveLeft(id, ifMatch, -body.by(), idempotencyKey);
+        Line line = lineService.moveLeft(id, ifMatch, -body.by());
         return ResponseEntity.ok()
                 .eTag(line.getLockVersion())
                 .<RepresentationModel<?>>body(lineModelAssembler.toModel(line));
     }
 
+    @Idempotent
     @PutMapping("{id}/left/move-right")
     @PreAuthorize("hasRoleForPartner(@lineAuthorization.CREATE_ROLE, #partnerId)")
     @ADR(1)
     ResponseEntity<RepresentationModel<?>> moveLeftPointRight(
             @PathVariable LineId id,
             IfMatch ifMatch,
-            @RequestHeader(name = "Idempotency-Key", required = false) @Nullable String idempotencyKey,
             @RequestHeader(name = "X-Partner-Id", required = false) @Nullable String partnerId,
             @Valid @RequestBody MoveRequest body) {
-        Line line = lineService.moveLeft(id, ifMatch, body.by(), idempotencyKey);
+        Line line = lineService.moveLeft(id, ifMatch, body.by());
         return ResponseEntity.ok()
                 .eTag(line.getLockVersion())
                 .<RepresentationModel<?>>body(lineModelAssembler.toModel(line));
     }
 
+    @Idempotent
     @PutMapping("{id}/right/move-left")
     @PreAuthorize("hasRoleForPartner(@lineAuthorization.CREATE_ROLE, #partnerId)")
     @ADR(1)
     ResponseEntity<RepresentationModel<?>> moveRightPointLeft(
             @PathVariable LineId id,
             IfMatch ifMatch,
-            @RequestHeader(name = "Idempotency-Key", required = false) @Nullable String idempotencyKey,
             @RequestHeader(name = "X-Partner-Id", required = false) @Nullable String partnerId,
             @Valid @RequestBody MoveRequest body) {
-        Line line = lineService.moveRight(id, ifMatch, -body.by(), idempotencyKey);
+        Line line = lineService.moveRight(id, ifMatch, -body.by());
         return ResponseEntity.ok()
                 .eTag(line.getLockVersion())
                 .<RepresentationModel<?>>body(lineModelAssembler.toModel(line));
     }
 
+    @Idempotent
     @PutMapping("{id}/right/move-right")
     @PreAuthorize("hasRoleForPartner(@lineAuthorization.CREATE_ROLE, #partnerId)")
     @ADR(1)
     ResponseEntity<RepresentationModel<?>> moveRightPointRight(
             @PathVariable LineId id,
             IfMatch ifMatch,
-            @RequestHeader(name = "Idempotency-Key", required = false) @Nullable String idempotencyKey,
             @RequestHeader(name = "X-Partner-Id", required = false) @Nullable String partnerId,
             @Valid @RequestBody MoveRequest body) {
-        Line line = lineService.moveRight(id, ifMatch, body.by(), idempotencyKey);
+        Line line = lineService.moveRight(id, ifMatch, body.by());
         return ResponseEntity.ok()
                 .eTag(line.getLockVersion())
                 .<RepresentationModel<?>>body(lineModelAssembler.toModel(line));

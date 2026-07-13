@@ -21,6 +21,8 @@
         <java.version>25</java.version>
         <modulith-docs.directory>${project.build.directory}/spring-modulith-docs</modulith-docs.directory>
         <nullaway.version>0.13.7</nullaway.version>
+        <!-- Not managed by jeap-spring-boot-parent's own BOM, so pinned independently. -->
+        <shedlock.version>7.7.0</shedlock.version>
         <!-- Build-time-only Asciidoctor extension; not yet released to track spring-restdocs-core's
         (Boot-managed) 4.0.1, so pinned independently. -->
         <spring-restdocs-asciidoctor.version>3.0.1</spring-restdocs-asciidoctor.version>
@@ -39,12 +41,39 @@
     <dependencies>
 
         <dependency>
+            <!-- Composite starter for standard jEAP applications; also pulls in
+            jeap-spring-boot-logging-starter (structured/JSON logging, MDC-enriched with
+            traceId/spanId) and, transitively through that, jeap-spring-boot-rest-request-tracing
+            (the RestRequestTracer request/response logger, see application.properties). -->
             <groupId>ch.admin.bit.jeap</groupId>
             <artifactId>jeap-spring-boot-application-starter</artifactId>
         </dependency>
         <dependency>
+            <!-- Actuator endpoints, Micrometer metrics/Prometheus scraping, and Micrometer
+            Tracing bridged to OpenTelemetry: this is what actually produces the traceId/spanId
+            that the logging starter above bridges into MDC/logs, and what the RestRequestTracer's
+            "caller" field on inbound calls relies on when calling other jEAP services. -->
+            <groupId>ch.admin.bit.jeap</groupId>
+            <artifactId>jeap-spring-boot-monitoring-starter</artifactId>
+        </dependency>
+        <dependency>
             <groupId>ch.admin.bit.jeap</groupId>
             <artifactId>jeap-spring-boot-security-starter</artifactId>
+        </dependency>
+
+        <dependency>
+            <!-- Distributed lock so IdempotencyHousekeeping's cleanup cron only ever runs on one
+            instance at a time when this app is scaled horizontally: the same library jeap's own
+            jeap-messaging-outbox uses for its housekeeping, for the same reason (see the shedlock
+            table in schema.sql, shaped to match that library's own convention). -->
+            <groupId>net.javacrumbs.shedlock</groupId>
+            <artifactId>shedlock-spring</artifactId>
+            <version>${shedlock.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>net.javacrumbs.shedlock</groupId>
+            <artifactId>shedlock-provider-jdbc-template</artifactId>
+            <version>${shedlock.version}</version>
         </dependency>
 
         <dependency>
@@ -528,16 +557,23 @@
                 <!--
                 Screenshots frontend pages/components into generated-docs.directory/images, so
                 index.adoc can embed them (see the "Web UI" section) and they ride along with
-                everything else asciidoctor-maven-plugin below already copies out. Both executions
-                are independent of each other (order between them doesn't matter), but both must
-                run before that asciidoctor-maven-plugin execution, which is declared below them
-                for exactly that reason.
+                everything else asciidoctor-maven-plugin below already copies out. All three
+                executions are independent of each other (order between them doesn't matter), but
+                all three must run before that asciidoctor-maven-plugin execution, which is
+                declared below them for exactly that reason.
 
                 take-overview-screenshot.sh boots a real instance of this app to screenshot
                 against (using the classpath file the maven-dependency-plugin execution above just
                 wrote), then tears it down again, deliberately exercising the real, running
                 integration, all within this one execution so there's no second execution of the
                 same goal for Maven to potentially reorder relative to it.
+
+                check-line-detail.sh takes the same real-instance approach, but asserts instead of
+                just capturing an image: it's a regression test for the frontend and backend's Line
+                JSON contract drifting apart (e.g. the per-point move API redesign changing GET
+                /lines/{id}'s shape without optimistic-locking-ui's installed jar being rebuilt to
+                match, which once shipped a silently-blank detail page that no mocked component
+                test could have caught). See check-line-detail.mjs's own top comment for the story.
 
                 take-component-screenshots.sh takes the opposite approach for everything else: no
                 backend, no JVM at all; it runs optimistic-locking-ui's own component test suite
@@ -559,6 +595,16 @@
                         <phase>prepare-package</phase>
                         <configuration>
                             <executable>${project.basedir}/take-overview-screenshot.sh</executable>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>check-line-detail</id>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <phase>prepare-package</phase>
+                        <configuration>
+                            <executable>${project.basedir}/check-line-detail.sh</executable>
                         </configuration>
                     </execution>
                     <execution>
