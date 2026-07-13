@@ -61,16 +61,19 @@ public class IdempotencyFilter extends OncePerRequestFilter {
     private final ServletSemanticAuthorization authorization;
     private final JsonMapper jsonMapper;
     private final HandlerMapping handlerMapping;
+    private final ProblemDetailEnricher problemDetailEnricher;
 
     public IdempotencyFilter(
             IdempotencyService idempotencyService,
             ServletSemanticAuthorization authorization,
             JsonMapper jsonMapper,
-            @Qualifier("requestMappingHandlerMapping") HandlerMapping handlerMapping) {
+            @Qualifier("requestMappingHandlerMapping") HandlerMapping handlerMapping,
+            ProblemDetailEnricher problemDetailEnricher) {
         this.idempotencyService = idempotencyService;
         this.authorization = authorization;
         this.jsonMapper = jsonMapper;
         this.handlerMapping = handlerMapping;
+        this.problemDetailEnricher = problemDetailEnricher;
     }
 
     @Override
@@ -166,6 +169,7 @@ public class IdempotencyFilter extends OncePerRequestFilter {
     private void writeProblemDetail(HttpServletResponse response, ErrorResponseException exception) throws IOException {
         response.setStatus(exception.getStatusCode().value());
         response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+        problemDetailEnricher.enrich(exception.getBody());
         response.getWriter().write(jsonMapper.writeValueAsString(exception.getBody()));
     }
 

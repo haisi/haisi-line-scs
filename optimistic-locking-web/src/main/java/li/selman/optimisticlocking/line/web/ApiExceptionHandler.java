@@ -3,6 +3,7 @@ package li.selman.optimisticlocking.line.web;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import li.selman.optimisticlocking.shared.web.ProblemDetailEnricher;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -33,9 +34,36 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
  * to activate Boot's autoconfigured equivalent, which is {@code @ConditionalOnMissingBean(
  * ResponseEntityExceptionHandler.class)} -- so this behaviour doesn't depend on that condition
  * resolving the same way across environments.
+ *
+ * <p>{@link #createResponseEntity} -- not {@code handleExceptionInternal} -- is the one place every
+ * error response in this app is guaranteed to carry its <em>final</em> {@link ProblemDetail} body,
+ * so that's where {@link ProblemDetailEnricher} adds {@code timestamp}/{@code traceId}/{@code
+ * spanId} to literally every one of them without touching each individual handler.
+ * {@code handleExceptionInternal} looks like the obvious single choke point (every default handler,
+ * and both methods below, call it) but for any {@link ErrorResponseException} -- i.e. every domain
+ * exception this app has -- {@code handleErrorResponseException} calls it with a {@code null} body;
+ * {@code handleExceptionInternal} only resolves the <em>real</em> body afterward, internally, via
+ * {@code ((ErrorResponse) ex).updateAndGetBody(...)}, before finally delegating to {@code
+ * createResponseEntity} with that resolved body -- so enriching at {@code handleExceptionInternal}
+ * would silently never fire for any domain exception at all.
  */
 @RestControllerAdvice
 class ApiExceptionHandler extends ResponseEntityExceptionHandler {
+
+    private final ProblemDetailEnricher problemDetailEnricher;
+
+    ApiExceptionHandler(ProblemDetailEnricher problemDetailEnricher) {
+        this.problemDetailEnricher = problemDetailEnricher;
+    }
+
+    @Override
+    protected ResponseEntity<Object> createResponseEntity(
+            @Nullable Object body, HttpHeaders headers, HttpStatusCode statusCode, WebRequest request) {
+        if (body instanceof ProblemDetail problemDetail) {
+            problemDetailEnricher.enrich(problemDetail);
+        }
+        return super.createResponseEntity(body, headers, statusCode, request);
+    }
 
     @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
     @Nullable ResponseEntity<Object> onOptimisticLockConflict(ObjectOptimisticLockingFailureException ex, WebRequest request) {

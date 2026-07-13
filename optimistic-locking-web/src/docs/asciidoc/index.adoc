@@ -158,6 +158,19 @@ omits the field rather than writing the literal string. Every other example in t
 `move-left-stale-precondition`, and so on -- carries this exact same envelope; only `status`,
 `title`, and `detail` change.
 
+`ProblemDetailEnricher` adds three more extension properties to every one of these: `timestamp`
+(when the problem was produced) and `traceId`/`spanId` -- the same values `RestRequestTracer`'s log
+line and every other log statement during this request already carry in MDC (see
+<<logging-and-tracing>>), so a client-reported error's `traceId` can be pasted straight into log
+search to land on every line that request produced. There are two distinct places a
+`ProblemDetail` can come from in this app -- `ApiExceptionHandler` (every domain exception, plus
+framework-level failures) and `IdempotencyFilter`'s own two direct responses (a fingerprint
+mismatch or in-flight duplicate, written before Spring MVC dispatch even begins, so they can never
+reach the exception handler) -- `ProblemDetailEnricher` is called from both, so the same three
+fields appear regardless of which path produced the error; see
+`LineControllerITTest.ErrorResponses#everyProblemDetail_includesTimestampTraceIdAndSpanId` and
+`LineControllerITTest.IdempotencyFilterBehavior#fingerprintMismatchResponse_alsoIncludesTimestampTraceIdAndSpanId`.
+
 ==== Bean Validation errors
 
 `CreateLineRequest.businessPartnerId` carries `@NotBlank`, and the controller parameter is

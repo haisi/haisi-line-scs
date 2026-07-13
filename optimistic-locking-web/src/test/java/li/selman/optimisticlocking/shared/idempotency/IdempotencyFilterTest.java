@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import ch.admin.bit.jeap.security.test.resource.ServletSemanticAuthorizationMock;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.micrometer.tracing.Tracer;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletRequest;
 import jakarta.servlet.ServletResponse;
@@ -19,6 +20,7 @@ import java.util.Map;
 import java.util.Optional;
 import li.selman.optimisticlocking.shared.web.Idempotent;
 import li.selman.optimisticlocking.shared.web.IdempotencyFilter;
+import li.selman.optimisticlocking.shared.web.ProblemDetailEnricher;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -51,7 +53,11 @@ class IdempotencyFilterTest {
     private final ServletSemanticAuthorizationMock authorization =
             ServletSemanticAuthorizationMock.builder().systemName("wvs").build();
     private final IdempotencyFilter filter = new IdempotencyFilter(
-            idempotencyService, authorization, JsonMapper.builder().build(), new FakeHandlerMapping());
+            idempotencyService,
+            authorization,
+            JsonMapper.builder().build(),
+            new FakeHandlerMapping(),
+            new ProblemDetailEnricher(Tracer.NOOP));
 
     @Test
     void noIdempotencyKeyHeader_letsRequestThrough() throws Exception {

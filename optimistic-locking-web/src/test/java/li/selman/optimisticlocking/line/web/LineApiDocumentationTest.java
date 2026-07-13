@@ -232,6 +232,14 @@ class LineApiDocumentationTest {
                                                         "Spring's own generic Bean Validation message -- deliberately unspecific, since it never names which field failed."),
                                         fieldWithPath("instance")
                                                 .description("The request path that produced this problem."),
+                                        fieldWithPath("timestamp")
+                                                .description(
+                                                        "Extension property added by ProblemDetailEnricher: when this problem was produced."),
+                                        fieldWithPath("traceId")
+                                                .description(
+                                                        "Extension property added by ProblemDetailEnricher: correlates this error to the exact log lines/trace it caused -- see <<logging-and-tracing>>."),
+                                        fieldWithPath("spanId")
+                                                .description("Extension property added by ProblemDetailEnricher: this request's span within its trace."),
                                         fieldWithPath("errors")
                                                 .description(
                                                         "Extension property added by ApiExceptionHandler: one entry per failed constraint."),
@@ -371,7 +379,16 @@ class LineApiDocumentationTest {
                                         .description(
                                                 "Human-readable explanation specific to this occurrence of the problem."),
                                 fieldWithPath("instance")
-                                        .description("The request path that produced this problem."))));
+                                        .description("The request path that produced this problem."),
+                                fieldWithPath("timestamp")
+                                        .description(
+                                                "Extension property added by ProblemDetailEnricher: when this problem was produced."),
+                                fieldWithPath("traceId")
+                                        .description(
+                                                "Extension property added by ProblemDetailEnricher: correlates this error to the exact log lines/trace it caused -- see <<logging-and-tracing>>."),
+                                fieldWithPath("spanId")
+                                        .description(
+                                                "Extension property added by ProblemDetailEnricher: this request's span within its trace."))));
     }
 
     @Test

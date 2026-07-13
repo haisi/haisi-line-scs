@@ -136,15 +136,28 @@ described above and in "Frontend code quality" below.
 - **Identity**: `LineId` is a `record` wrapping a `UUID`, implementing jMolecules'
   `Identifier`/`AggregateRoot` DDD marker interfaces (see `org.jmolecules.ddd.types`) for
   documentation/architecture-testing purposes rather than runtime behavior.
-- **Web layer** (`line/web/`): `LineController` exposes `GET/PUT/DELETE /lines/{id}`,
-  `PUT /lines/{id}/left` and `PUT /lines/{id}/right` (move), and a minimal paginated `GET /lines`. It
-  translates aggregate version into `ETag`/`If-Match`/`If-None-Match` HTTP semantics directly (no
-  separate mapper layer). `LineRepresentationModelProcessor` adds a self-link plus conditional
-  `move-left`/`move-right` links (built via `WebMvcLinkBuilder.linkTo(methodOn(...))`) that disappear
-  exactly when the corresponding move would violate a business rule. `OptimisticLockingExceptionHandler`
-  is the one `@RestControllerAdvice` in the app, mapping `ObjectOptimisticLockingFailureException` to
-  409 — every other status comes from a domain exception in `shared`/`line` annotated `@ResponseStatus`
-  (see `StaleStateIdentified` for the pattern).
+- **Web layer** (`line/web/`): `LineController` exposes `GET/PUT/DELETE /lines/{id}`, four
+  per-point/per-direction move endpoints, and a minimal paginated `GET /lines`. It translates
+  aggregate version into `ETag`/`If-Match`/`If-None-Match` HTTP semantics directly (no separate
+  mapper layer). `LineModelAssembler` builds the HAL representation, adding a self-link plus
+  conditional `moveLeft`/`moveRight` links on each embedded point (built via
+  `WebMvcLinkBuilder.linkTo(methodOn(...))`) that disappear exactly when the corresponding move
+  would violate a business rule. `ApiExceptionHandler` is the one `@RestControllerAdvice` in the
+  app (extending `ResponseEntityExceptionHandler`, not relying on Boot's autoconfigured equivalent):
+  every domain exception in `shared`/`line` (`LineNotFound`, `LineAlreadyExists`,
+  `BusinessRuleViolated`, `IdempotencyKeyReused`, `IdempotencyKeyInUse`, `PreconditionRequired`,
+  `StaleStateIdentified`) extends `ErrorResponseException` and is handled by its inherited
+  machinery; `ObjectOptimisticLockingFailureException` (409, a framework exception we don't own) and
+  a richer `errors` array for Bean Validation failures are the two explicit overrides. Every
+  `application/problem+json` response -- from `ApiExceptionHandler` *and* from `IdempotencyFilter`'s
+  own two direct responses, which run before Spring MVC dispatch and so can never reach
+  `ApiExceptionHandler` at all -- gets `timestamp`/`traceId`/`spanId` extension properties from
+  `shared/web/ProblemDetailEnricher`; `ApiExceptionHandler` adds it by overriding
+  `createResponseEntity` specifically, *not* `handleExceptionInternal` -- for any `ErrorResponseException`,
+  `handleExceptionInternal` runs before the real `ProblemDetail` body has even been resolved (that
+  handler is called with a `null` body for that case, resolved only afterward via
+  `ErrorResponse#updateAndGetBody`), so enriching there would silently never fire for a single
+  domain exception in this app.
 - **Service layer** (`LineService`): where optimistic-concurrency decisions are made (idempotency is
   a cross-cutting, filter-level concern now — see below, not this service). `create` is a PUT-style,
   client-generated-UUID create: identical retries are a no-op replay (200), a different body for an

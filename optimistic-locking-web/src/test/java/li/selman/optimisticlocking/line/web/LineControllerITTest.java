@@ -879,6 +879,32 @@ class LineControllerITTest {
                     .value(String.class, detail -> assertThat(detail).contains(id.toString()));
         }
 
+        /**
+         * {@code ProblemDetailEnricher} adds these to every {@code application/problem+json}
+         * response via {@code ApiExceptionHandler#handleExceptionInternal} -- the one place every
+         * domain exception and every framework-level failure funnels through.
+         */
+        @Test
+        void everyProblemDetail_includesTimestampTraceIdAndSpanId() {
+            UUID id = UUID.randomUUID(); // never saved -> LineNotFound -> 404
+
+            authedClient
+                    .put()
+                    .uri("/lines/{id}/left/move-right", id)
+                    .header(HttpHeaders.IF_MATCH, "\"1\"")
+                    .body(new MoveRequest(1))
+                    .exchange()
+                    .expectStatus()
+                    .isNotFound()
+                    .expectBody()
+                    .jsonPath("$.timestamp")
+                    .exists()
+                    .jsonPath("$.traceId")
+                    .exists()
+                    .jsonPath("$.spanId")
+                    .exists();
+        }
+
         @Test
         void domainException_violatingAnInvariant_returns422ProblemDetailWithReason() {
             UUID id = UUID.randomUUID();
@@ -1963,6 +1989,49 @@ class LineControllerITTest {
             Counter counter =
                     meterRegistry.find("idempotency.outcomes").tag("outcome", outcome).counter();
             return counter == null ? 0.0 : counter.count();
+        }
+
+        /**
+         * {@code IdempotencyFilter} writes its own 422/409 responses directly (it runs before
+         * Spring MVC dispatch, so it can never reach {@code ApiExceptionHandler}) -- proving {@code
+         * ProblemDetailEnricher} is wired into *both* paths, not just the MVC one every other error
+         * response in this app goes through.
+         */
+        @Test
+        void fingerprintMismatchResponse_alsoIncludesTimestampTraceIdAndSpanId() {
+            UUID id = UUID.randomUUID();
+            lineRepository.save(
+                    LineFixture.newBuilder().id(id).line(3, 9).lockVersion(1).build());
+            String idempotencyKey = UUID.randomUUID().toString();
+
+            authedClient
+                    .put()
+                    .uri("/lines/{id}/left/move-right", id)
+                    .header(HttpHeaders.IF_MATCH, "\"1\"")
+                    .header("Idempotency-Key", idempotencyKey)
+                    .body(new MoveRequest(1))
+                    .exchange()
+                    .expectStatus()
+                    .isOk();
+
+            // Same key, different body -> fingerprint mismatch (422), written directly by
+            // IdempotencyFilter itself.
+            authedClient
+                    .put()
+                    .uri("/lines/{id}/left/move-right", id)
+                    .header(HttpHeaders.IF_MATCH, "\"2\"")
+                    .header("Idempotency-Key", idempotencyKey)
+                    .body(new MoveRequest(2))
+                    .exchange()
+                    .expectStatus()
+                    .isEqualTo(422)
+                    .expectBody()
+                    .jsonPath("$.timestamp")
+                    .exists()
+                    .jsonPath("$.traceId")
+                    .exists()
+                    .jsonPath("$.spanId")
+                    .exists();
         }
 
         /**
