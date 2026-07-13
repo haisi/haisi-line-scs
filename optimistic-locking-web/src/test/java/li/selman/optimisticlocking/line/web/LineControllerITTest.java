@@ -10,9 +10,16 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CyclicBarrier;
@@ -81,6 +88,9 @@ class LineControllerITTest {
 
     @Autowired
     JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    MeterRegistry meterRegistry;
 
     /**
      * Authenticated as the sole business partner every {@link LineFixture} line belongs to, holding both
@@ -1836,6 +1846,123 @@ class LineControllerITTest {
                     .exchange()
                     .expectStatus()
                     .isOk();
+        }
+
+        /**
+         * Reproduces ADR 2's documented crash window end-to-end: the business mutation already
+         * succeeded (the version was already bumped to {@code "2"}), but {@code
+         * IdempotencyService#complete} never ran -- e.g. the process crashed in the gap between the
+         * business transaction's commit and that call -- leaving a stale, never-completed {@code
+         * RESERVED} row behind (seeded directly here, since nothing in this app's own code can
+         * actually crash on demand). A retry past {@code RESERVATION_TIMEOUT} treats that row as
+         * abandoned and genuinely re-executes -- but the client has no way to know its first attempt
+         * already landed, so it still carries its *original* ({@code "1"}, now-stale) {@code
+         * If-Match}. The result is {@code 412}: neither a silent second move nor a replay of a
+         * response that was never recorded -- exactly the trade-off ADR 2 accepts, never a
+         * double-apply.
+         */
+        @Test
+        void retryAfterCrashBetweenBusinessCommitAndComplete_landsOn412NotAReplay() {
+            UUID id = UUID.randomUUID();
+            lineRepository.save(
+                    LineFixture.newBuilder().id(id).line(3, 9).lockVersion(1).build());
+            String idempotencyKey = UUID.randomUUID().toString();
+
+            // The move "actually happened" -- as if it had run under this Idempotency-Key and
+            // succeeded, bumping the version to "2", right before the crash.
+            authedClient
+                    .put()
+                    .uri("/lines/{id}/left/move-right", id)
+                    .header(HttpHeaders.IF_MATCH, "\"1\"")
+                    .body(new MoveRequest(2))
+                    .exchange()
+                    .expectStatus()
+                    .isOk()
+                    .expectHeader()
+                    .valueEquals(HttpHeaders.ETAG, "\"2\"");
+
+            // The stale, never-completed reservation that crash would have left behind. Must be
+            // older than IdempotencyService.RESERVATION_TIMEOUT (30s, package-private -- not
+            // visible from this package) for the retry below to treat it as abandoned rather than
+            // still in-flight.
+            jdbcTemplate.update(
+                    "INSERT INTO idempotency_record (id, fingerprint, status, created_at) VALUES (?, ?, 'RESERVED', ?)",
+                    idempotencyKey,
+                    "irrelevant-for-a-stale-reservation",
+                    Timestamp.from(Instant.now().minusSeconds(35)));
+
+            // The client's retry: same key, but still carrying the *original* If-Match ("1") --
+            // it has no way to know the first attempt already succeeded and moved the version on.
+            authedClient
+                    .put()
+                    .uri("/lines/{id}/left/move-right", id)
+                    .header(HttpHeaders.IF_MATCH, "\"1\"")
+                    .header("Idempotency-Key", idempotencyKey)
+                    .body(new MoveRequest(2))
+                    .exchange()
+                    .expectStatus()
+                    .isEqualTo(412);
+
+            // Confirms this is a precondition rejection, not a silent second move: the line is
+            // still exactly where the first (successful, never-recorded) attempt left it.
+            authedClient
+                    .get()
+                    .uri("/lines/{id}", id)
+                    .exchange()
+                    .expectHeader()
+                    .valueEquals(HttpHeaders.ETAG, "\"2\"");
+        }
+
+        /**
+         * See {@code IdempotencyService}'s Javadoc for what each metric means and how to query it
+         * from Grafana/PromQL -- this just confirms the three are genuinely wired up and moving
+         * during real request handling, not merely declared.
+         */
+        @Test
+        void reserveOutcomesAreRecordedAsMetrics() {
+            UUID id = UUID.randomUUID();
+            lineRepository.save(
+                    LineFixture.newBuilder().id(id).line(3, 9).lockVersion(1).build());
+            String idempotencyKey = UUID.randomUUID().toString();
+            double reservedBefore = outcomeCount("reserved");
+            double replayBefore = outcomeCount("replay");
+
+            authedClient
+                    .put()
+                    .uri("/lines/{id}/left/move-right", id)
+                    .header(HttpHeaders.IF_MATCH, "\"1\"")
+                    .header("Idempotency-Key", idempotencyKey)
+                    .body(new MoveRequest(1))
+                    .exchange()
+                    .expectStatus()
+                    .isOk();
+
+            assertThat(outcomeCount("reserved")).isEqualTo(reservedBefore + 1);
+            Timer reserveTimer = Objects.requireNonNull(
+                    meterRegistry.find("idempotency.reserve.duration").timer(), "idempotency.reserve.duration timer");
+            assertThat(reserveTimer.count()).isGreaterThan(0);
+            Gauge recordsGauge = Objects.requireNonNull(
+                    meterRegistry.find("idempotency.records").gauge(), "idempotency.records gauge");
+            assertThat(recordsGauge.value()).isGreaterThanOrEqualTo(1.0);
+
+            // A retry with the same key/fingerprint replays instead of reserving fresh.
+            authedClient
+                    .put()
+                    .uri("/lines/{id}/left/move-right", id)
+                    .header(HttpHeaders.IF_MATCH, "\"1\"")
+                    .header("Idempotency-Key", idempotencyKey)
+                    .body(new MoveRequest(1))
+                    .exchange()
+                    .expectStatus()
+                    .isOk();
+
+            assertThat(outcomeCount("replay")).isEqualTo(replayBefore + 1);
+        }
+
+        private double outcomeCount(String outcome) {
+            Counter counter =
+                    meterRegistry.find("idempotency.outcomes").tag("outcome", outcome).counter();
+            return counter == null ? 0.0 : counter.count();
         }
 
         /**

@@ -209,7 +209,7 @@ caller can even reach that branch (every business-partner caller was already den
 `BusinessPartnerFilter` and every `LineController` method above are annotated `@ADR(1)`, linking
 straight back to the ADR embedded below, which records why a header was chosen over the alternatives.
 
-include::../../../docs/adr/0001-x-partner-id-header-for-business-partner-scoping.adoc[leveloffset=+2]
+include::../../../../docs/adr/0001-x-partner-id-header-for-business-partner-scoping.adoc[leveloffset=+2]
 
 === Creating a line
 
@@ -346,22 +346,48 @@ releases the reservation instead of freezing that failure under the key forever,
 -- even one that fingerprints identically -- executes for real against whatever the current state is;
 see `LineControllerITTest.IdempotencyFilterBehavior#nonSuccessResponseUnderIdempotencyKey_abandonsReservationSoRetryCanSucceed`.
 
-This is a deliberate change from an earlier version of this app, where the idempotency record was
-written in the *same* database transaction as the move itself, so a lost version CAS rolled both
-back together. Moving the mechanism to a filter means that guarantee no longer holds quite as
-tightly: the reservation commits *before* the request is dispatched, and the stored response commits
-*after* the business transaction already has -- two or three separate transactions, not one. A crash
-in between leaves a stale, incomplete reservation; a retry then re-executes for real (once that
-reservation is old enough to be treated as abandoned) rather than replaying -- but it still carries
-its *original* `If-Match`, which the intervening state change has already made stale, so it lands on
-the ordinary `412` path above rather than silently double-applying. The version CAS remains the real
-safety net underneath idempotency here, not the replay record itself.
+Moving idempotency into a filter also moves its bookkeeping out of the business mutation's own
+database transaction -- unlike an earlier version of this app, where the idempotency record was
+written in the *same* transaction as the move, so a lost version CAS rolled both back together. A
+crash between the business transaction committing and the filter recording that outcome can leave a
+retry landing on an unexpected `412` instead of a clean replay; see
+`LineControllerITTest.IdempotencyFilterBehavior#retryAfterCrashBetweenBusinessCommitAndComplete_landsOn412NotAReplay`
+for exactly that scenario reproduced end-to-end, and ADR 2 below for the full trade-off (including
+the alternatives considered and rejected):
+
+include::../../../../docs/adr/0002-idempotency-reservation-commits-separately-from-the-business-transaction.adoc[leveloffset=+2]
 
 A separate, `@SchedulerLock`-guarded (https://github.com/lukas-krecan/ShedLock[ShedLock]) cron job,
 `IdempotencyHousekeeping`, deletes idempotency records older than 24 hours so the table doesn't grow
 forever -- see `IdempotencyHousekeepingTest` for the executable proof, including that the underlying
 lock is genuinely taken (not just that the cleanup query ran).
 
+`IdempotencyService` also exposes three Micrometer metrics (scraped alongside every other metric
+this app publishes -- see <<logging-and-tracing,the next section>> -- via `/actuator/prometheus`),
+so an operator can see how the mechanism actually behaves in production rather than only in tests:
+
+[cols="1,2", options="header"]
+|===
+|Metric |What it shows
+
+|`idempotency_outcomes_total{outcome="..."}`
+|A counter per `reserve()` outcome (`reserved`, `replay`, `fingerprint_mismatch`, `in_progress`).
+`rate(idempotency_outcomes_total{outcome="replay"}[5m])` against the total rate answers "how often
+is a replay actually serving a retry instead of new work".
+
+|`idempotency_records`
+|A gauge: the current row count in `idempotency_record` -- how large the table has grown since the
+last hourly housekeeping sweep.
+
+|`idempotency_reserve_duration_seconds`
+|A timer around `reserve()` itself -- how fast the reservation lookup (and, for a fresh key, the
+insert) is.
+|===
+
+See `LineControllerITTest.IdempotencyFilterBehavior#reserveOutcomesAreRecordedAsMetrics` for proof
+these are genuinely updated during real request handling, not just declared.
+
+[[logging-and-tracing]]
 == Non-functional concern: logging &amp; tracing
 
 Every request this app handles is logged and traced through three

@@ -25,6 +25,9 @@ public interface IdempotencyRecordRepository extends Repository<IdempotencyRecor
 
     void deleteById(String id);
 
+    /** Backs the {@code idempotency.records} gauge -- see {@link IdempotencyService}. */
+    long count();
+
     /**
      * Housekeeping: called by {@code IdempotencyHousekeeping}'s ShedLock-guarded cron. A plain
      * derived {@code deleteByCreatedAtBefore} has no backing method on {@code SimpleJpaRepository}

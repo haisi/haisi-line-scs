@@ -1,6 +1,7 @@
 package li.selman.optimisticlocking.shared.web;
 
 import ch.admin.bit.jeap.security.resource.semanticAuthentication.ServletSemanticAuthorization;
+import io.github.adr.linked.ADR;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -45,8 +46,13 @@ import tools.jackson.databind.json.JsonMapper;
  * and partner-affiliation checks -- nothing is ever reserved/cached for a request that chain would
  * have rejected anyway, and {@link ServletSemanticAuthorization#getAuthenticationToken()} is safe
  * to call for the fingerprint's subject component.
+ *
+ * <p>Running before Spring MVC dispatch means this filter's reserve/complete steps cannot share a
+ * database transaction with whatever the handler does -- see {@link IdempotencyService}'s Javadoc
+ * and ADR 2 for that trade-off.
  */
 @Component
+@ADR(2)
 public class IdempotencyFilter extends OncePerRequestFilter {
 
     static final String HEADER_NAME = "Idempotency-Key";
@@ -115,24 +121,40 @@ public class IdempotencyFilter extends OncePerRequestFilter {
         }
     }
 
+    /**
+     * Wraps {@code response} so the handler's <em>final</em> status/headers/body -- whatever
+     * {@code LineController}, {@code ApiExceptionHandler}, or any other downstream code ultimately
+     * produces -- can be read back after {@code chain.doFilter} returns, since nothing downstream
+     * writes to the real response directly: everything downstream shares this same wrapped object.
+     *
+     * <p>If the handler chain instead throws past every exception resolver (i.e. genuinely
+     * unhandled -- {@code ApiExceptionHandler} and Spring's own default resolvers catch everything
+     * this app anticipates, so in practice this means an unexpected bug, not a normal error path),
+     * the reservation is abandoned <em>before</em> re-throwing, deliberately outside a {@code
+     * finally}: at that point nothing has necessarily set a real status on the response yet (it
+     * would still read the default, {@code 200}), so treating "an exception propagated" the same
+     * as "the handler returned normally" would both cache a fabricated 200/empty-body success under
+     * this key -- masking a real failure from every future retry -- and call {@code
+     * copyBodyToResponse} while the exception is still unwinding, potentially committing a response
+     * out from under the container's own error-page handling.
+     */
     private void handleFresh(
             CachedBodyHttpServletRequest request, HttpServletResponse response, FilterChain chain, String key)
             throws ServletException, IOException {
         ContentCachingResponseWrapper cachingResponse = new ContentCachingResponseWrapper(response);
         try {
             chain.doFilter(request, cachingResponse);
-        } finally {
-            if (cachingResponse.getStatus() / 100 == 2) {
-                idempotencyService.complete(
-                        key,
-                        cachingResponse.getStatus(),
-                        encodeHeaders(cachingResponse),
-                        cachingResponse.getContentAsByteArray());
-            } else {
-                idempotencyService.abandon(key);
-            }
-            cachingResponse.copyBodyToResponse();
+        } catch (IOException | ServletException | RuntimeException e) {
+            idempotencyService.abandon(key);
+            throw e;
         }
+        if (cachingResponse.getStatus() / 100 == 2) {
+            idempotencyService.complete(
+                    key, cachingResponse.getStatus(), encodeHeaders(cachingResponse), cachingResponse.getContentAsByteArray());
+        } else {
+            idempotencyService.abandon(key);
+        }
+        cachingResponse.copyBodyToResponse();
     }
 
     private void replay(HttpServletResponse response, IdempotencyRecord record) throws IOException {

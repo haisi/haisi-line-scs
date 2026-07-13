@@ -1,0 +1,122 @@
+= Idempotency reservation commits separately from the business transaction
+
+*Status:* Accepted +
+*Date:* 2026-07-13 +
+*Decision-makers:* Hasan Selman Kara
+
+== Context and Problem Statement
+
+`IdempotencyFilter` replaced an earlier, `Line`-embedded idempotency mechanism where
+`LineService.move` wrote the idempotency record in the *same* database transaction as the move
+itself: a lost version CAS rolled the mutation and its idempotency record back together, so
+"the move succeeded" and "a replay is now available" were always true or false *together*, never one
+without the other.
+
+Moving idempotency into a generic, protocol-level `Filter` -- so it can sit ahead of *any* endpoint,
+not be re-implemented per business method -- gives up that atomicity. A servlet `Filter` runs before
+Spring MVC dispatch, entirely outside whatever transaction the eventual handler opens; it has no
+portable way to join that transaction (it doesn't even know, in general, whether the handler will use
+a database transaction at all, let alone this specific `EntityManager`). So the filter's three
+operations -- claim the key ("reserve"), run the handler, and record the outcome ("complete"/
+"abandon") -- unavoidably become separate commits. How much correctness risk does that reopen, and is
+it acceptable?
+
+== Decision Drivers
+
+* Idempotency must stay a single, generic mechanism -- not duplicated per business method (the exact
+  problem the `Line`-embedded version had).
+* Actual correctness (no double-application of a mutation) must not depend on the idempotency
+  bookkeeping succeeding at all -- it must hold even if the `idempotency_record` write is lost
+  entirely.
+* The filter must stay decoupled from what any given handler actually does downstream; it cannot
+  assume a shared, joinable Spring-managed transaction exists.
+
+== Considered Options
+
+* Accept three separate commits (reserve before dispatch, complete/abandon after), relying on the
+  existing optimistic-locking version CAS as the actual safety net.
+* Re-embed the idempotency write into each business method's own transaction (the original design)
+  to restore atomicity.
+* Narrow the window with `TransactionSynchronizationManager.registerSynchronization(...)`, having the
+  filter register an `afterCommit` callback on whatever transaction happens to be active when the
+  handler returns, instead of an unconditional separate commit.
+
+== Decision Outcome
+
+Chosen option: "Accept three separate commits", because the version CAS already is, and must remain,
+the actual correctness backstop for this mechanism -- see <<domain-invariants,the optimistic-locking
+concurrency-control section>> of this guide. The idempotency record only ever decides *whether a
+request is replayed or re-executed*; it was never itself the thing preventing a double-apply. Losing
+atomicity between the two changes what a client *sees* on an unlucky retry, not whether the mutation
+can be duplicated.
+
+=== Consequences
+
+* Good, because `IdempotencyFilter` stays a single, generic mechanism usable ahead of any endpoint,
+  regardless of what that endpoint's handler does internally -- no business method needs to know
+  idempotency exists, unlike the design this replaces.
+* Good, because correctness (no silent double-application) holds *unconditionally* -- even a total
+  loss of the `idempotency_record` table degrades this to "no replay available," never to a duplicate
+  mutation, since the version CAS in `LineService.move` doesn't depend on it.
+* Bad, because a crash between the business transaction's commit and `IdempotencyService#complete`
+  leaves a stale `RESERVED` row behind even though the mutation it was guarding actually succeeded. A
+  retry inside `IdempotencyService#RESERVATION_TIMEOUT` (30s) is told (wrongly) that the request is
+  still in flight (`409`); once past that window, the retry is instead treated as abandoned and
+  genuinely re-executes -- but carrying the client's *original*, by-then-stale `If-Match`, so it lands
+  on the ordinary `412 Precondition Failed` path rather than replaying the original success. The
+  client's request *was* handled safely (no duplicate), but it does not get the clean replay that
+  `Idempotency-Key` is supposed to promise -- see `LineControllerITTest.IdempotencyFilterBehavior#retryAfterCrashBetweenBusinessCommitAndComplete_landsOn412NotAReplay`.
+* Bad, because this is strictly weaker than what the `Line`-embedded design gave up, and weaker than
+  https://docs.stripe.com/api/idempotent_requests[Stripe's] own guarantee (they, too, cannot make this
+  fully atomic across their whole call graph, but at least within *their own* database boundary they
+  appear to keep it tighter than a filter sitting entirely outside Spring MVC dispatch can).
+
+=== Confirmation
+
+`LineControllerITTest.IdempotencyFilterBehavior#retryAfterCrashBetweenBusinessCommitAndComplete_landsOn412NotAReplay`
+directly simulates the crash window: it seeds a `RESERVED` (never completed) row older than
+`RESERVATION_TIMEOUT` for a key whose move has *already* actually succeeded against the database, then
+retries with the original (now-stale) `If-Match` and asserts `412`, not a silent second move and not a
+replay of a response that was never recorded. `IdempotencyFilterBehavior#nonSuccessResponseUnderIdempotencyKey_abandonsReservationSoRetryCanSucceed`
+covers the simpler, non-crash abandon path.
+
+== Pros and Cons of the Options
+
+=== Accept three separate commits
+
+* Good, because it requires no coupling between the filter and whatever transaction machinery a
+  given handler happens to use.
+* Good, because the failure window is bounded (`RESERVATION_TIMEOUT`) and its worst outcome is a
+  wrong status code on a retry, never a data-integrity problem.
+* Bad, because "the same key always returns the same answer" -- the intuitive promise of an
+  idempotency key -- doesn't unconditionally hold in this narrow window.
+
+=== Re-embed the write in each business method's transaction
+
+* Good, because it restores full atomicity, exactly like the design this ADR's context describes.
+* Bad, because it reintroduces the original problem this whole redesign exists to solve: every
+  business method that wants idempotency support has to know about and manually integrate with the
+  mechanism, rather than opting in with one annotation.
+* Bad, because it still wouldn't generalize to a handler whose "success" isn't a local database write
+  at all (e.g. a proxied call to another service) -- the filter would have no transaction to join in
+  that case regardless.
+
+=== `afterCommit` synchronization from the filter
+
+* Good, because it would narrow the crash window relative to the chosen option: `complete()` would
+  fire as part of the same commit's aftermath rather than as a fully independent, later operation.
+* Neutral, because it narrows, but does not close, the window -- a crash between the business
+  commit and the synchronization callback firing is still possible.
+* Bad, because it requires the filter to assume a Spring-managed transaction is active on the current
+  thread when the handler returns, coupling a supposedly handler-agnostic filter to an implementation
+  detail of what handlers happen to do today.
+* Bad, because the added complexity buys a probabilistic improvement, not a correctness guarantee --
+  not a clearly good trade for a mechanism whose actual safety net (the version CAS) is unaffected
+  either way.
+
+== More Information
+
+See `IdempotencyService`'s own Javadoc for the same trade-off from the code's point of view, and the
+"Non-functional concern: idempotency" section of this guide for the caller-facing explanation.
+`IdempotencyFilter` and `IdempotencyService` are annotated `@io.github.adr.linked.ADR(2)` so this
+decision stays discoverable from the code that implements it.

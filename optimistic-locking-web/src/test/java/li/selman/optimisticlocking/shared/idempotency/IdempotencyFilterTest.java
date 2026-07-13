@@ -1,8 +1,10 @@
 package li.selman.optimisticlocking.shared.idempotency;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import ch.admin.bit.jeap.security.test.resource.ServletSemanticAuthorizationMock;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletRequest;
 import jakarta.servlet.ServletResponse;
@@ -44,7 +46,8 @@ class IdempotencyFilterTest {
     private static final String NOT_OPTED_IN_URI = "/lines/11111111-1111-1111-1111-111111111111";
 
     private final FakeIdempotencyRecordRepository repository = new FakeIdempotencyRecordRepository();
-    private final IdempotencyService idempotencyService = new IdempotencyService(repository);
+    private final IdempotencyService idempotencyService =
+            new IdempotencyService(repository, new SimpleMeterRegistry());
     private final ServletSemanticAuthorizationMock authorization =
             ServletSemanticAuthorizationMock.builder().systemName("wvs").build();
     private final IdempotencyFilter filter = new IdempotencyFilter(
@@ -88,6 +91,29 @@ class IdempotencyFilterTest {
         assertThat(response.getStatus()).isEqualTo(200);
         assertThat(response.getContentAsString()).isEqualTo("moved");
         assertThat(repository.records).containsKey("key-1");
+    }
+
+    /**
+     * If the handler chain throws past every exception resolver -- genuinely unhandled, not a
+     * normal error path -- the reservation must be abandoned, not cached as a fabricated 200/empty
+     * success (nothing would have explicitly set a status yet, so the response would still read its
+     * default, 200). Otherwise a retry would replay that fake success and never actually re-run.
+     */
+    @Test
+    void chainThrows_abandonsReservationAndRethrowsRatherThanCachingAFakeSuccess() {
+        MockHttpServletRequest request = new MockHttpServletRequest("PUT", URI);
+        request.addHeader(HEADER_NAME, "key-throws");
+        request.setContent("{\"by\":1}".getBytes(StandardCharsets.UTF_8));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        FilterChain throwingChain = (req, res) -> {
+            throw new IllegalStateException("unexpected bug downstream");
+        };
+
+        assertThatThrownBy(() -> filter.doFilter(request, response, throwingChain))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("unexpected bug downstream");
+
+        assertThat(repository.records).isEmpty();
     }
 
     @Test
@@ -203,6 +229,11 @@ class IdempotencyFilterTest {
         @Override
         public void deleteById(String id) {
             records.remove(id);
+        }
+
+        @Override
+        public long count() {
+            return records.size();
         }
 
         @Override

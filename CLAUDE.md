@@ -176,15 +176,19 @@ described above and in "Frontend code quality" below.
   concurrent racer's constraint violation is what produces the 409. A replay never invokes
   `LineController`/`LineService` at all, so it still can't duplicate a `ManualOperation` audit entry
   — the same property the old, `Line`-embedded version had, now achieved architecturally rather than
-  by convention. **Trade-off worth knowing**: this moves the idempotency record's write out of the
-  business mutation's own transaction (unlike the old design) — `reserve` commits before dispatch,
-  `complete`/`abandon` commit after, so a crash in between can leave a stale reservation; a retry
-  then re-executes for real rather than replaying, but still lands on the ordinary 412 path (not a
-  double-apply) since the version CAS above remains the actual safety net. `IdempotencyHousekeeping`
+  by convention. **Trade-off worth knowing (see ADR 2, `docs/adr/0002-...adoc`, for the full
+  write-up)**: this moves the idempotency record's write out of the business mutation's own
+  transaction (unlike the old design) — `reserve` commits before dispatch, `complete`/`abandon`
+  commit after, so a crash in between can leave a stale reservation; a retry then re-executes for
+  real rather than replaying, but still lands on the ordinary 412 path (not a double-apply) since
+  the version CAS above remains the actual safety net. `IdempotencyHousekeeping`
   (`shared/web/`) deletes records older than 24h hourly, guarded by ShedLock (`@SchedulerLock`, see
   `SchedulingConfig`) so only one instance runs it when scaled horizontally — its `shedlock` table
   shape matches jeap's own `jeap-messaging-outbox` library's convention, even though this repo
-  doesn't depend on it.
+  doesn't depend on it. `IdempotencyService` also publishes three Micrometer metrics —
+  `idempotency.outcomes` (counter, tagged `outcome`: `reserved`/`replay`/`fingerprint_mismatch`/
+  `in_progress`), `idempotency.records` (gauge: current row count), `idempotency.reserve.duration`
+  (timer) — see that class's Javadoc for exactly what each one means.
 - **Persistence**: `schema.sql` defines the H2 schema by hand (no Flyway/Liquibase); JPA entities map
   onto it directly. The app runs against an in-memory H2 database with no external services.
 - **Logging & tracing**: `jeap-spring-boot-monitoring-starter` (Micrometer Tracing bridged to

@@ -1,5 +1,9 @@
 package li.selman.optimisticlocking.shared.idempotency;
 
+import io.github.adr.linked.ADR;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import jakarta.transaction.Transactional;
 import java.time.Duration;
 import java.time.Instant;
@@ -15,19 +19,42 @@ import org.springframework.stereotype.Service;
  * exactly how, and why it deliberately isn't itself annotated {@code @Transactional}), so a
  * concurrent request can always see it.
  *
- * <p>This is a deliberate change from the {@code Line}-embedded mechanism it replaces: there, the
- * idempotency record was written in the very same transaction as the business mutation, so a lost
- * version CAS rolled both back together. Here, {@link #reserve} commits <em>before</em> the
- * business logic runs and {@link #complete}/{@link #abandon} commit <em>after</em> it already has
- * -- two or three separate transactions, not one. A crash between the business commit and {@link
- * #complete} leaves a stale {@code RESERVED} row behind; a retry then finds it past {@link
- * #RESERVATION_TIMEOUT}, treats it as abandoned, and genuinely re-executes -- carrying the
- * *original* (by-then-stale) {@code If-Match}, so it lands on the ordinary 412 path rather than
- * silently double-applying. Accepted here because the optimistic-locking version CAS remains the
- * real safety net underneath this mechanism, not the idempotency record itself.
+ * <p><b>Transaction-boundary trade-off (see ADR 2 for the full write-up, including alternatives
+ * considered and rejected):</b> this is a deliberate change from the {@code Line}-embedded
+ * mechanism it replaces, where the idempotency record was written in the very same transaction as
+ * the business mutation, so a lost version CAS rolled both back together. Here, {@link #reserve}
+ * commits <em>before</em> the business logic runs and {@link #complete}/{@link #abandon} commit
+ * <em>after</em> it already has -- two or three separate transactions, not one. Concretely, a crash
+ * between the business transaction's commit and {@link #complete} leaves a stale {@code RESERVED}
+ * row behind:
+ * <ul>
+ *   <li>Within {@link #RESERVATION_TIMEOUT} of that crash, a retry is told (wrongly) that the
+ *       request is still in flight -- {@code 409}, via {@code IdempotencyKeyInUse} -- even though
+ *       nothing is actually running anymore.
+ *   <li>Past that window, a retry instead treats the reservation as abandoned and genuinely
+ *       re-executes -- but carrying the client's <em>original</em> (by-then-stale) {@code If-Match},
+ *       so it lands on the ordinary {@code 412} path rather than either double-applying the
+ *       mutation or replaying the (never-recorded) original response.
+ * </ul>
+ * Accepted because the optimistic-locking version CAS remains the real safety net against a
+ * double-apply, unconditionally, regardless of what happens to this table -- what this trade-off
+ * costs is protocol fidelity (a client can get an unexpected status code instead of a clean replay
+ * in this narrow window), never data-integrity. See {@code
+ * LineControllerITTest.IdempotencyFilterBehavior#retryAfterCrashBetweenBusinessCommitAndComplete_landsOn412NotAReplay}
+ * for this exact scenario reproduced end-to-end.
+ *
+ * <p><b>Metrics</b> (exposed via {@code /actuator/prometheus}, see {@code
+ * jeap-spring-boot-monitoring-starter}): {@code idempotency.outcomes} (a counter tagged {@code
+ * outcome} with one of {@code reserved}/{@code replay}/{@code fingerprint_mismatch}/{@code
+ * in_progress} -- e.g. {@code rate(idempotency_outcomes_total{outcome="replay"}[5m])} shows how
+ * often a replay is actually serving a retry instead of new work), {@code idempotency.records} (a
+ * gauge: current row count in {@code idempotency_record}, i.e. how large the table has grown since
+ * the last housekeeping sweep), and {@code idempotency.reserve.duration} (a timer around {@link
+ * #reserve}: how fast the reservation lookup itself is).
  */
 @ApplicationRing
 @Service
+@ADR(2)
 public class IdempotencyService {
 
     /**
@@ -37,9 +64,22 @@ public class IdempotencyService {
     static final Duration RESERVATION_TIMEOUT = Duration.ofSeconds(30);
 
     private final IdempotencyRecordRepository repository;
+    private final MeterRegistry meterRegistry;
+    private final Timer reserveTimer;
 
-    IdempotencyService(IdempotencyRecordRepository repository) {
+    IdempotencyService(IdempotencyRecordRepository repository, MeterRegistry meterRegistry) {
         this.repository = repository;
+        this.meterRegistry = meterRegistry;
+        this.reserveTimer = Timer.builder("idempotency.reserve.duration")
+                .description("Time to resolve an Idempotency-Key reservation attempt (lookup, plus insert or stale cleanup)")
+                .register(meterRegistry);
+        // A live gauge, sampled by re-running COUNT(*) on every scrape rather than a value updated
+        // in the background -- perfectly fine at this app's scale/scrape frequency, but a table
+        // this cheap to query is itself a property of a teaching app, not something to assume at
+        // higher volume or scrape rate.
+        Gauge.builder("idempotency.records", repository, IdempotencyRecordRepository::count)
+                .description("Current number of rows in idempotency_record (reserved + completed, not yet pruned)")
+                .register(meterRegistry);
     }
 
     /**
@@ -60,6 +100,21 @@ public class IdempotencyService {
      * constraint violation cannot simply keep going, no matter how promptly the exception is caught.
      */
     public IdempotencyReservationResult reserve(String key, String fingerprint) {
+        IdempotencyReservationResult result = reserveTimer.record(() -> doReserve(key, fingerprint));
+        meterRegistry.counter("idempotency.outcomes", "outcome", outcomeTag(result)).increment();
+        return result;
+    }
+
+    private static String outcomeTag(IdempotencyReservationResult result) {
+        return switch (result) {
+            case IdempotencyReservationResult.Reserved() -> "reserved";
+            case IdempotencyReservationResult.Replay(IdempotencyRecord ignored) -> "replay";
+            case IdempotencyReservationResult.FingerprintMismatch() -> "fingerprint_mismatch";
+            case IdempotencyReservationResult.InProgress() -> "in_progress";
+        };
+    }
+
+    private IdempotencyReservationResult doReserve(String key, String fingerprint) {
         Optional<IdempotencyRecord> existing = repository.findById(key);
         if (existing.isPresent()) {
             IdempotencyRecord record = existing.get();
